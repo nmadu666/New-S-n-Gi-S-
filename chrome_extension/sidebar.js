@@ -1,6 +1,514 @@
-function initialize() {
-  console.log("Sidebar initialized.");
-  // Add your initialization logic here
+/*
+ * ===================================================================
+ * LOGIC CHÍNH CHO SIDEBAR TRA CỨU MÀU SƠN
+ * ===================================================================
+ * File này triển khai toàn bộ logic nghiệp vụ đã định nghĩa
+ * trong file GEMINI.md.
+ */
+
+// !!! QUAN TRỌNG: DÁN URL APP SCRIPT CỦA BẠN VÀO ĐÂY !!!
+const API_URL = "https://script.google.com/macros/s/AKfycbxub034UvLNAad2lkELjIkRqsN7yJqFCLBnG8pbqNascU6MiC1vODHpQG_UwPhKnMY/exec";
+
+// Biến toàn cục để lưu trữ toàn bộ cơ sở dữ liệu
+let DB = {};
+// Biến lưu trữ trạng thái của UI
+let fullColorList = []; // Lưu danh sách màu gốc để tìm kiếm
+let currentState = {
+  panel: 'colors', // 'colors', 'parentProducts', 'skus'
+  selectedColor: null, // {id, code, name, hexCode}
+  selectedParentProduct: null // {id, name}
+};
+
+// Định nghĩa các ID DOM dưới dạng hằng số để dễ quản lý và tránh lỗi chính tả
+const DOM_IDS = {
+  LOADER: 'loader',
+  APP_CONTAINER: 'app-container',
+  TRADEMARK_FILTER: 'trademark-filter',
+  COLOR_SEARCH: 'color-search',
+  BACK_BUTTON: 'back-button',
+  PANEL_TITLE: 'panel-title',
+  HEADER: 'header',
+  COLOR_LIST_PANEL: 'color-list-panel',
+  PARENT_PRODUCT_LIST_PANEL: 'parent-product-list-panel',
+  SKU_LIST_PANEL: 'sku-list-panel',
+  COLOR_LIST_CONTAINER: 'color-list',
+  PARENT_PRODUCT_LIST_CONTAINER: 'parent-product-list',
+  SKU_LIST_CONTAINER: 'sku-list'
+};
+
+// Lấy các phần tử DOM chính sử dụng hằng số
+const loader = document.getElementById(DOM_IDS.LOADER);
+const appContainer = document.getElementById(DOM_IDS.APP_CONTAINER);
+const trademarkFilter = document.getElementById(DOM_IDS.TRADEMARK_FILTER);
+const colorSearch = document.getElementById(DOM_IDS.COLOR_SEARCH);
+const backButton = document.getElementById(DOM_IDS.BACK_BUTTON);
+const panelTitle = document.getElementById(DOM_IDS.PANEL_TITLE);
+const headerElement = document.getElementById(DOM_IDS.HEADER); // Đổi tên để tránh trùng với thẻ <header>
+
+// Các panel (sử dụng hằng số)
+const panels = {
+  colors: document.getElementById(DOM_IDS.COLOR_LIST_PANEL),
+  parentProducts: document.getElementById(DOM_IDS.PARENT_PRODUCT_LIST_PANEL),
+  skus: document.getElementById(DOM_IDS.SKU_LIST_PANEL)
+};
+
+// Nơi render nội dung (sử dụng hằng số)
+const colorListContainer = document.getElementById(DOM_IDS.COLOR_LIST_CONTAINER);
+const parentProductListContainer = document.getElementById(DOM_IDS.PARENT_PRODUCT_LIST_CONTAINER);
+const skuListContainer = document.getElementById(DOM_IDS.SKU_LIST_CONTAINER);
+
+// Chạy hàm initialize khi DOM đã tải xong
+document.addEventListener('DOMContentLoaded', initialize);
+
+// Gắn sự kiện cho các bộ lọc
+/**
+ * Xử lý sự kiện khi bộ lọc hãng thay đổi.
+ * Gọi hàm `applyFilters` để cập nhật danh sách màu.
+ * @returns {void}
+ */
+trademarkFilter.addEventListener('change', handleTrademarkFilter);
+colorSearch.addEventListener('input', handleColorSearch);
+backButton.addEventListener('click', handleBackClick);
+
+/**
+ * ===================================================================
+ * BƯỚC 0: KHỞI TẠO (Hàm initialize())
+ * ===================================================================
+ * Hàm khởi tạo chính của ứng dụng.
+ * Thực hiện tải dữ liệu từ API, xử lý lỗi, hiển thị bộ lọc hãng,
+ * và render danh sách màu ban đầu.
+ * @returns {Promise<void>}
+ */
+async function initialize() {
+  console.log("Bắt đầu khởi tạo...");
+  try {
+    // 1. Hiển thị thông báo tải
+    loader.classList.remove('hidden');
+    appContainer.classList.add('hidden');
+
+    // 2. Gọi fetch đến API URL
+    const response = await fetch(API_URL);
+    if (!response.ok) {
+      throw new Error(`API call failed with status: ${response.status}`);
+    }
+    const data = await response.json();
+
+    // Kiểm tra xem API có trả về lỗi App Script không
+    if (data.success === false) {
+      throw new Error(`API Error: ${data.message}`);
+    }
+
+    // 3. Lưu kết quả vào biến toàn cục DB
+    DB = data;
+    console.log("Database đã tải:", DB);
+
+    // --- BẮT ĐẦU CẢI TIẾN ---
+    // Xác định các hãng có máy pha màu
+    // Logic: Một hãng có máy pha màu nếu nó có ít nhất 1 ParentProduct 
+    // có định nghĩa `color_mixing_product_type`.
+    const mixingBrandIds = new Set();
+    if (DB.parentProducts) {
+      DB.parentProducts.forEach(pp => {
+        // Nếu `color_mixing_product_type` tồn tại và không rỗng
+        if (pp.color_mixing_product_type && pp.color_mixing_product_type.trim() !== "") {
+          mixingBrandIds.add(pp.trademark_ref);
+        }
+      });
+    }
+    console.log("Các hãng có máy pha màu (IDs):", mixingBrandIds);
+    // --- KẾT THÚC CẢI TIẾN ---
+
+    // 4. Hiển thị bộ lọc Hãng (truyền Set ID vào)
+    renderTrademarks(mixingBrandIds); // <--- ĐÃ CẬP NHẬT
+
+    // 5. Hiển thị toàn bộ danh sách màu
+    // Lưu danh sách màu gốc để tìm kiếm
+    fullColorList = DB.colors || [];
+    renderColors(fullColorList);
+
+    // 6. Ẩn thông báo tải và hiển thị ứng dụng
+    loader.classList.add('hidden');
+    appContainer.classList.remove('hidden');
+    console.log("Khởi tạo hoàn tất.");
+
+  } catch (error) {
+    console.error("Lỗi nghiêm trọng khi khởi tạo:", error);
+    loader.innerHTML = `
+            <p style="color: red;"><strong>Đã xảy ra lỗi khi tải dữ liệu!</strong></p>
+            <p style="font-size: 12px; color: #333;">${error.message}</p>
+            <p style="font-size: 12px; color: #333;">Hãy kiểm tra lại URL API trong file sidebar.js hoặc liên hệ quản trị viên.</p>
+        `;
+  }
 }
 
-document.addEventListener('DOMContentLoaded', initialize);
+/**
+ * Hiển thị danh sách hãng (Trademarks) vào <select>
+ * @param {Set<string>} mixingBrandIds - Set các ID của hãng có máy pha màu
+ * @returns {void}
+ */
+function renderTrademarks(mixingBrandIds) { // <--- ĐÃ CẬP NHẬT
+  if (!DB.trademarks) {
+    console.warn("Không tìm thấy DB.trademarks");
+    return;
+  }
+  trademarkFilter.innerHTML = '<option value="all">Tất cả các hãng</option>';
+
+  // --- BẮT ĐẦU CẢI TIẾN ---
+  // Sắp xếp lại danh sách: ưu tiên hãng có máy pha màu lên đầu, sau đó sắp xếp theo tên
+  const sortedTrademarks = [...DB.trademarks].sort((a, b) => {
+    const aHasMixing = mixingBrandIds.has(a.id);
+    const bHasMixing = mixingBrandIds.has(b.id);
+
+    if (aHasMixing && !bHasMixing) return -1; // a lên trước
+    if (!aHasMixing && bHasMixing) return 1;  // b lên trước
+
+    // Nếu cả hai đều có hoặc không có, sắp xếp theo tên
+    return a.tradeMarkName.localeCompare(b.tradeMarkName);
+  });
+  // --- KẾT THÚC CẢI TIẾN ---
+
+  sortedTrademarks.forEach(brand => { // <--- ĐÃ CẬP NHẬT (dùng sortedTrademarks)
+    const option = document.createElement('option');
+    option.value = brand.id;
+
+    // --- BẮT ĐẦU CẢI TIẾN ---
+    // Thêm dấu hiệu nhận biết
+    if (mixingBrandIds.has(brand.id)) {
+      option.textContent = `🎨 ${brand.tradeMarkName} (Pha màu)`;
+      option.style.fontWeight = '600'; // In đậm
+      option.style.color = '#0056b3'; // Đổi màu
+    } else {
+      option.textContent = `${brand.tradeMarkName}`;
+    }
+    // --- KẾT THÚC CẢI TIẾN ---
+
+    trademarkFilter.appendChild(option);
+  });
+}
+
+/**
+ * Hiển thị danh sách màu (Colors) ra UI
+ * @param {Array} colorsToRender - Mảng các đối tượng màu cần hiển thị
+ * @returns {void}
+ */
+function renderColors(colorsToRender) {
+  colorListContainer.innerHTML = ''; // Xóa nội dung cũ
+  if (!colorsToRender || colorsToRender.length === 0) {
+    colorListContainer.innerHTML = '<p>Không tìm thấy màu phù hợp.</p>';
+    return;
+  }
+
+  colorsToRender.forEach(color => {
+    const item = document.createElement('div');
+    item.className = 'color-item';
+    // Truyền ID vào dataset để lấy khi click
+    item.dataset.colorId = color.id;
+    item.innerHTML = `
+            <div class="color-swatch" style="background-color: ${color.hexCode || '#eee'}"></div>
+            <div class="color-info">
+                <span class="color-code">${color.code || 'N/A'}</span>
+                <span class="color-name">${color.name || '...'}</span>
+            </div>
+        `;
+    // Gắn sự kiện click
+    item.addEventListener('click', () => onColorClick(color));
+    colorListContainer.appendChild(item);
+  });
+}
+
+/**
+ * ===================================================================
+ * BƯỚC 1: LỌC MÀU (Hãng & Tìm kiếm)
+ * ===================================================================
+ * Xử lý sự kiện khi bộ lọc hãng thay đổi.
+ * @returns {void}
+ */
+function handleTrademarkFilter() {
+  applyFilters();
+}
+
+/**
+ * Xử lý sự kiện khi người dùng nhập vào ô tìm kiếm màu.
+ * Gọi hàm `applyFilters` để cập nhật danh sách màu.
+ * @returns {void}
+ */
+function handleColorSearch() {
+  applyFilters();
+}
+
+/**
+ * Hàm tổng hợp để lọc và hiển thị màu sắc
+ * Lọc `fullColorList` dựa trên giá trị của `trademarkFilter` và `colorSearch`.
+ * Sau đó gọi `renderColors` để hiển thị kết quả.
+ * @returns {void}
+ */
+function applyFilters() {
+  const brandId = trademarkFilter.value;
+  const searchTerm = colorSearch.value.toLowerCase().trim();
+
+  let filteredColors = fullColorList;
+
+  // 1. Lọc theo Hãng
+  if (brandId !== 'all') {
+    filteredColors = filteredColors.filter(color => color.trademark_ref == brandId);
+  }
+
+  // 2. Lọc theo Từ khóa tìm kiếm (tìm cả tên và mã màu)
+  if (searchTerm) {
+    filteredColors = filteredColors.filter(color =>
+      (color.name && color.name.toLowerCase().includes(searchTerm)) ||
+      (color.code && color.code.toLowerCase().includes(searchTerm))
+    );
+  }
+
+  renderColors(filteredColors);
+}
+
+/**
+ * ===================================================================
+ * BƯỚC 2: CHỌN MÀU (Hàm onColorClick(color))
+ * ===================================================================
+ * Xử lý sự kiện khi người dùng click vào một màu.
+ * Lọc ra các dòng sản phẩm (ParentProduct) phù hợp với màu đã chọn
+ * và chuyển sang panel hiển thị danh sách dòng sản phẩm.
+ * @param {object} color - Đối tượng màu đã chọn.
+ * ===================================================================
+ */
+function onColorClick(color) {
+  console.log("Đã chọn màu:", color);
+  currentState.selectedColor = color; // Lưu màu đã chọn
+
+  // Logic:
+  // 1. Lọc `DB.colorPricings` để tìm tất cả các dòng có `color_ref`
+  const matchingPricings = DB.colorPricings.filter(p => p.color_ref == color.id);
+
+  // 2. Từ kết quả, lấy ra danh sách duy nhất các `color_mixing_product_type`
+  const allowedTypes = [...new Set(matchingPricings.map(p => p.color_mixing_product_type))];
+  // -> (ví dụ: ['int_1', 'int_2', 'ext_1', 'sd'])
+
+  // 3. Dùng danh sách `type` này, lọc `DB.parentProducts`
+  const applicableParentProducts = DB.parentProducts.filter(pp =>
+    allowedTypes.includes(pp.color_mixing_product_type)
+  );
+
+  console.log("Các dòng sản phẩm phù hợp:", applicableParentProducts);
+
+  // 4. Hiển thị danh sách ParentProduct phù hợp
+  renderParentProducts(applicableParentProducts);
+
+  // 5. Chuyển UI sang panel Dòng sản phẩm
+  navigateToPanel('parentProducts', `Màu: ${color.code} - ${color.name}`);
+}
+
+/**
+ * Hiển thị danh sách Dòng sản phẩm (ParentProduct) ra UI.
+ * Mỗi dòng sản phẩm sẽ có thể click để xem chi tiết SKU.
+ * @param {Array<object>} parentProducts - Mảng các đối tượng ParentProduct cần hiển thị.
+ * @returns {void}
+ */
+function renderParentProducts(parentProducts) {
+  parentProductListContainer.innerHTML = ''; // Xóa nội dung cũ
+  if (!parentProducts || parentProducts.length === 0) {
+    parentProductListContainer.innerHTML = '<p>Màu này không pha được cho dòng sản phẩm nào.</p>';
+    return;
+  }
+
+  parentProducts.forEach(pp => {
+    const item = document.createElement('div');
+    item.className = 'list-item';
+    item.dataset.parentProductId = pp.id;
+    item.innerHTML = `
+            <strong>${pp.name || 'N/A'}</strong>
+            <span>(Loại: ${pp.color_mixing_product_type || 'N/A'})</span>
+        `;
+    // Gắn sự kiện click
+    item.addEventListener('click', () => onParentProductClick(pp));
+    parentProductListContainer.appendChild(item);
+  });
+}
+
+/**
+ * ===================================================================
+ * BƯỚC 3: CHỌN DÒNG SẢN PHẨM (Hàm onParentProductClick(pp))
+ * ===================================================================
+ * Xử lý sự kiện khi người dùng click vào một dòng sản phẩm (ParentProduct).
+ * Tìm kiếm thông tin giá (pricingInfo) và các SKU (lon) phù hợp,
+ * sau đó chuyển sang panel hiển thị danh sách SKU.
+ * @param {object} parentProduct - Đối tượng ParentProduct đã chọn.
+ * ===================================================================
+ */
+function onParentProductClick(parentProduct) {
+  console.log("Đã chọn Dòng SP:", parentProduct);
+  currentState.selectedParentProduct = parentProduct; // Lưu dòng SP đã chọn
+
+  const colorId = currentState.selectedColor.id;
+  const productType = parentProduct.color_mixing_product_type; // (ví dụ: 'int_1')
+
+  // 2. Logic (phức tạp):
+  // Tìm MỘT (1) dòng trong `DB.colorPricings` khớp CẢ HAI
+  const pricingInfo = DB.colorPricings.find(p =>
+    p.color_ref == colorId && p.color_mixing_product_type == productType
+  );
+
+  if (!pricingInfo) {
+    console.error("Lỗi nghiêm trọng: Không tìm thấy pricingInfo cho:", colorId, productType);
+    skuListContainer.innerHTML = '<p>Lỗi: Không tìm thấy thông tin giá cho sản phẩm này.</p>';
+    navigateToPanel('skus', parentProduct.name);
+    return;
+  }
+
+  console.log("Thông tin giá:", pricingInfo); // (ví dụ: { base: 'A', pricePerMl: 1 })
+
+  // Dùng `pricingInfo.base` và `parentProduct.id` để lọc `DB.products`
+  const applicableSKUs = DB.products.filter(sku =>
+    sku.parent_product_ref == parentProduct.id && sku.base == pricingInfo.base
+  );
+
+  console.log("Các SKU (lon) phù hợp:", applicableSKUs);
+
+  // 3. Hiển thị danh sách SKU (lon) phù hợp và tính giá
+  renderSKUs(applicableSKUs, pricingInfo);
+
+  // 4. Chuyển UI sang panel SKU
+  navigateToPanel('skus', parentProduct.name);
+}
+
+/**
+ * ===================================================================
+ * BƯỚC 4: TÍNH GIÁ (Hàm calculatePrice)
+ * ===================================================================
+ * Tính toán giá base, giá màu thêm và giá thành phẩm cho một SKU cụ thể.
+ * @param {object} sku - Đối tượng SKU từ DB.products
+ * @param {object} pricingInfo - Đối tượng pricingInfo từ DB.colorPricings
+ * @returns {{giaBase: number, giaMau: number, giaThanhPham: number}} Các thành phần giá
+ */
+function calculatePrice(sku, pricingInfo) {
+  const giaBase = parseFloat(sku.basePrice) || 0;
+  const unitValue = parseFloat(sku.unit_value) || 0;
+
+  // Chuyển đổi dung tích sang mililit để tính giá màu chính xác
+  let volumeInMl = 0;
+  if (sku.unit === 'Lít') {
+    volumeInMl = unitValue * 1000; // 1 Lít = 1000 ml
+  } else if (sku.unit === 'ml') {
+    volumeInMl = unitValue; // Đã là mililit
+  } else {
+    // Xử lý các đơn vị khác nếu có, hoặc đưa ra cảnh báo.
+    // Hiện tại, giả định các sản phẩm pha màu luôn có đơn vị thể tích.
+    console.warn(`Đơn vị không xác định cho SKU ${sku.id}: ${sku.unit}. Giả định unit_value là Lít.`);
+    volumeInMl = unitValue * 1000;
+  }
+
+  // pricePerMl là giá thêm cho mỗi mililit
+  const giaMau = parseFloat(pricingInfo.pricePerMl) * volumeInMl;
+  const giaThanhPham = giaBase + giaMau;
+
+  return { giaBase, giaMau, giaThanhPham };
+}
+
+/**
+ * ===================================================================
+ * BƯỚC 4: HIỂN THỊ SKU VÀ GIÁ (Hàm renderSKUs)
+ * ===================================================================
+ * Hiển thị danh sách các SKU (lon) phù hợp cùng với thông tin giá đã tính toán.
+ * @param {Array<object>} skus - Mảng các đối tượng SKU cần hiển thị.
+ * @param {object} pricingInfo - Thông tin giá pha màu cho màu và loại sản phẩm hiện tại.
+ * @returns {void}
+ */
+function renderSKUs(skus, pricingInfo) {
+  skuListContainer.innerHTML = ''; // Xóa nội dung cũ
+  if (!skus || skus.length === 0) {
+    skuListContainer.innerHTML = '<p>Không tìm thấy lon (SKU) phù hợp cho loại base này.</p>';
+    return;
+  }
+
+  skus.forEach(sku => {
+    const { giaBase, giaMau, giaThanhPham } = calculatePrice(sku, pricingInfo);
+
+    // Thêm thuộc tính aria-live cho loader
+    const loaderElement = document.getElementById(DOM_IDS.LOADER);
+    if (loaderElement && !loaderElement.hasAttribute('aria-live')) {
+      loaderElement.setAttribute('aria-live', 'polite');
+      loaderElement.setAttribute('aria-atomic', 'true');
+    }
+
+    const item = document.createElement('div');
+    item.className = 'sku-item';
+    item.innerHTML = `
+            <div class="sku-name">${sku.name}</div>
+            <div class="price-row">
+                <span>Giá Base (${sku.base}):</span>
+                <span>${giaBase.toLocaleString('vi-VN')} đ</span>
+            </div>
+            <div class="price-row">
+                <span>Giá Màu (Thêm):</span>
+                <span>${giaMau.toLocaleString('vi-VN')} đ</span>
+            </div>
+            <div class="price-row total">
+                <span>Giá Thành Phẩm:</span>
+                <span>${giaThanhPham.toLocaleString('vi-VN')} đ</span>
+            </div>
+        `;
+    skuListContainer.appendChild(item);
+  });
+}
+
+
+/**
+ * ===================================================================
+ * HÀM TIỆN ÍCH (Điều hướng UI)
+ * ===================================================================
+ */
+
+/**
+ * Hàm điều hướng chung
+ * @param {string} panelName - Tên panel ('colors', 'parentProducts', 'skus')
+ * @param {string} title - Tiêu đề mới
+ */
+function navigateToPanel(panelName, title) {
+  // Ẩn tất cả các panel
+  Object.values(panels).forEach(panel => panel.classList.remove('active'));
+
+  // Hiển thị panel được chọn
+  if (panels[panelName]) {
+    panels[panelName].classList.add('active');
+  }
+
+  // Cập nhật tiêu đề
+  panelTitle.textContent = title;
+  currentState.panel = panelName;
+
+  // Quản lý nút back
+  if (panelName === 'colors') {
+    backButton.classList.add('hidden');
+    // Khi quay về trang màu, reset bộ lọc
+    applyFilters();
+  } else {
+    backButton.classList.remove('hidden');
+  }
+
+  // Quản lý bộ lọc
+  if (panelName === 'colors') {
+    headerElement.classList.remove('hidden');
+  } else {
+    // Ẩn bộ lọc khi xem chi tiết
+    headerElement.classList.add('hidden');
+  }
+}
+
+/**
+ * Xử lý sự kiện khi người dùng nhấn nút "Back".
+ * Điều hướng người dùng quay lại panel trước đó dựa trên `currentState.panel`.
+ * @returns {void}
+ * Xử lý khi nhấn nút Back
+ */
+function handleBackClick() {
+  if (currentState.panel === 'skus') {
+    // Từ SKU quay về Dòng SP (ParentProduct)
+    // Cần gọi lại onColorClick để render lại danh sách ParentProduct
+    onColorClick(currentState.selectedColor);
+  } else if (currentState.panel === 'parentProducts') {
+    // Từ Dòng SP quay về Danh sách màu
+    navigateToPanel('colors', 'Tất Cả Màu');
+  }
+}

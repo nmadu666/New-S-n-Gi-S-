@@ -1,12 +1,247 @@
 <!DOCTYPE html>
-<html>
+<html lang="vi">
+
 <head>
-  <title>Sidebar</title>
-  <link rel="stylesheet" href="sidebar.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tra Cứu Màu Sơn</title>
+  <style>
+    /* CSS Reset cơ bản */
+    :root {
+      --primary-color: #007bff;
+      --light-gray: #f4f4f4;
+      --dark-gray: #333;
+      --text-color: #222;
+      --border-color: #ddd;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 12px;
+      background-color: #fff;
+      color: var(--text-color);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    /* Loader */
+    #loader {
+      padding: 20px;
+      text-align: center;
+      font-weight: 500;
+    }
+
+    /* Ẩn các phần tử */
+    .hidden {
+      display: none !important;
+    }
+
+    /* Header (bộ lọc) */
+    #header {
+      margin-bottom: 12px;
+    }
+
+    #header select,
+    #header input {
+      width: 100%;
+      padding: 8px 12px;
+      font-size: 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+    }
+
+    #header input {
+      margin-top: 8px;
+    }
+
+    /* Điều hướng Panel */
+    #panel-navigation {
+      display: flex;
+      align-items: center;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+    }
+
+    #back-button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 20px;
+      padding: 0 10px 0 0;
+      color: var(--primary-color);
+    }
+
+    #panel-title {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    /* Panel chung */
+    .panel {
+      display: none;
+      /* Mặc định ẩn các panel */
+    }
+
+    .panel.active {
+      display: block;
+      /* Hiển thị panel active */
+    }
+
+    /* Danh sách (grid) màu */
+    #color-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+      gap: 8px;
+    }
+
+    .color-item {
+      cursor: pointer;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      overflow: hidden;
+      transition: transform 0.1s ease;
+    }
+
+    .color-item:hover {
+      transform: scale(1.05);
+      border-color: var(--primary-color);
+    }
+
+    .color-swatch {
+      width: 100%;
+      height: 60px;
+      background-color: var(--light-gray);
+      /* Màu fallback */
+    }
+
+    .color-info {
+      padding: 6px;
+      text-align: center;
+    }
+
+    .color-code {
+      font-weight: 600;
+      font-size: 13px;
+      display: block;
+    }
+
+    .color-name {
+      font-size: 11px;
+      color: #666;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Danh sách sản phẩm/SKU (dạng list) */
+    .list-item {
+      padding: 12px 8px;
+      border-bottom: 1px solid var(--light-gray);
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .list-item:hover {
+      background-color: #f9f9f9;
+    }
+
+    .list-item strong {
+      display: block;
+      font-size: 13px;
+      color: var(--dark-gray);
+      margin-bottom: 2px;
+    }
+
+    .list-item span {
+      font-size: 12px;
+      color: #555;
+    }
+
+    /* Chi tiết giá (SKU) */
+    .sku-item {
+      padding: 10px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+
+    .sku-name {
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .price-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+      font-size: 13px;
+    }
+
+    .price-row.total {
+      font-weight: 700;
+      font-size: 15px;
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px dashed var(--border-color);
+    }
+  </style>
 </head>
+
 <body>
-  <h1>Sidebar Content</h1>
-  <p>This is the sidebar.</p>
+
+  <!-- Loader hiển thị khi chờ API -->
+  <div id="loader" aria-live="polite" aria-atomic="true">
+    <p>Đang đồng bộ dữ liệu...</p>
+    <p>Vui lòng chờ trong giây lát.</p>
+  </div>
+
+  <!-- Container chính của ứng dụng, mặc định bị ẩn -->
+  <div id="app-container" class="hidden">
+
+    <!-- Header: Chứa các bộ lọc -->
+    <div id="header">
+      <select id="trademark-filter"></select>
+      <input type="search" id="color-search" placeholder="Tìm tên/mã màu...">
+    </div>
+
+    <!-- Điều hướng: Nút Back và Tiêu đề -->
+    <div id="panel-navigation">
+      <button id="back-button" class="hidden">‹</button>
+      <h2 id="panel-title">Tất Cả Màu</h2>
+    </div>
+
+    <!-- Khu vực nội dung chính, chứa các panel -->
+    <div id="content">
+      <!-- Panel 1: Danh sách màu -->
+      <div id="color-list-panel" class="panel active">
+        <div id="color-list">
+          <!-- JavaScript sẽ render các màu vào đây -->
+        </div>
+      </div>
+
+      <!-- Panel 2: Danh sách dòng sản phẩm -->
+      <div id="parent-product-list-panel" class="panel">
+        <div id="parent-product-list">
+          <!-- JavaScript sẽ render các dòng SP vào đây -->
+        </div>
+      </div>
+
+      <!-- Panel 3: Danh sách SKU và giá -->
+      <div id="sku-list-panel" class="panel">
+        <div id="sku-list">
+          <!-- JavaScript sẽ render các SKU và giá vào đây -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Nhúng file JS -->
   <script src="sidebar.js"></script>
 </body>
+
 </html>
