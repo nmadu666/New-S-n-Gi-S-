@@ -1,4 +1,4 @@
-/*
+/**
  * ===================================================================
  * LOGIC CHÍNH CHO SIDEBAR TRA CỨU MÀU SƠN
  * ===================================================================
@@ -6,17 +6,29 @@
  * trong file GEMINI.md.
  */
 
+import { AllData, Color, ColorPricing, ParentProduct, Product, Trademark } from '@shared/types';
+import './sidebar.css';
+
 // !!! QUAN TRỌNG: DÁN URL APP SCRIPT CỦA BẠN VÀO ĐÂY !!!
-const API_URL = "https://script.google.com/macros/s/AKfycbxub034UvLNAad2lkELjIkRqsN7yJqFCLBnG8pbqNascU6MiC1vODHpQG_UwPhKnMY/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxub034UvLNAad2lkELjIkRqsN7yJqFCLBnG8pbqNascU6MiC1vODHpQG_UwPhKnMY/exec"; // Thay thế bằng URL của bạn
+
+// Định nghĩa kiểu cho State
+interface AppState {
+  panel: 'colors' | 'parentProducts' | 'skus';
+  selectedColor: Color | null;
+  selectedParentProduct: ParentProduct | null;
+}
 
 // Biến toàn cục để lưu trữ toàn bộ cơ sở dữ liệu
-let DB = {};
+let DB: AllData = { trademarks: [], colors: [], parentProducts: [], colorPricings: [], products: [] };
+
 // Biến lưu trữ trạng thái của UI
-let fullColorList = []; // Lưu danh sách màu gốc để tìm kiếm
-let currentState = {
+let fullColorList: Color[] = [];
+
+let currentState: AppState = {
   panel: 'colors', // 'colors', 'parentProducts', 'skus'
-  selectedColor: null, // {id, code, name, hexCode}
-  selectedParentProduct: null // {id, name}
+  selectedColor: null,
+  selectedParentProduct: null
 };
 
 // Định nghĩa các ID DOM dưới dạng hằng số để dễ quản lý và tránh lỗi chính tả
@@ -37,25 +49,25 @@ const DOM_IDS = {
 };
 
 // Lấy các phần tử DOM chính sử dụng hằng số
-const loader = document.getElementById(DOM_IDS.LOADER);
-const appContainer = document.getElementById(DOM_IDS.APP_CONTAINER);
-const trademarkFilter = document.getElementById(DOM_IDS.TRADEMARK_FILTER);
-const colorSearch = document.getElementById(DOM_IDS.COLOR_SEARCH);
-const backButton = document.getElementById(DOM_IDS.BACK_BUTTON);
-const panelTitle = document.getElementById(DOM_IDS.PANEL_TITLE);
-const headerElement = document.getElementById(DOM_IDS.HEADER); // Đổi tên để tránh trùng với thẻ <header>
+const loader = document.getElementById(DOM_IDS.LOADER) as HTMLElement;
+const appContainer = document.getElementById(DOM_IDS.APP_CONTAINER) as HTMLElement;
+const trademarkFilter = document.getElementById(DOM_IDS.TRADEMARK_FILTER) as HTMLSelectElement;
+const colorSearch = document.getElementById(DOM_IDS.COLOR_SEARCH) as HTMLInputElement;
+const backButton = document.getElementById(DOM_IDS.BACK_BUTTON) as HTMLButtonElement;
+const panelTitle = document.getElementById(DOM_IDS.PANEL_TITLE) as HTMLElement;
+const headerElement = document.getElementById(DOM_IDS.HEADER) as HTMLElement;
 
 // Các panel (sử dụng hằng số)
 const panels = {
-  colors: document.getElementById(DOM_IDS.COLOR_LIST_PANEL),
-  parentProducts: document.getElementById(DOM_IDS.PARENT_PRODUCT_LIST_PANEL),
-  skus: document.getElementById(DOM_IDS.SKU_LIST_PANEL)
+  colors: document.getElementById(DOM_IDS.COLOR_LIST_PANEL) as HTMLElement,
+  parentProducts: document.getElementById(DOM_IDS.PARENT_PRODUCT_LIST_PANEL) as HTMLElement,
+  skus: document.getElementById(DOM_IDS.SKU_LIST_PANEL) as HTMLElement
 };
 
 // Nơi render nội dung (sử dụng hằng số)
-const colorListContainer = document.getElementById(DOM_IDS.COLOR_LIST_CONTAINER);
-const parentProductListContainer = document.getElementById(DOM_IDS.PARENT_PRODUCT_LIST_CONTAINER);
-const skuListContainer = document.getElementById(DOM_IDS.SKU_LIST_CONTAINER);
+const colorListContainer = document.getElementById(DOM_IDS.COLOR_LIST_CONTAINER) as HTMLElement;
+const parentProductListContainer = document.getElementById(DOM_IDS.PARENT_PRODUCT_LIST_CONTAINER) as HTMLElement;
+const skuListContainer = document.getElementById(DOM_IDS.SKU_LIST_CONTAINER) as HTMLElement;
 
 // Chạy hàm initialize khi DOM đã tải xong
 document.addEventListener('DOMContentLoaded', initialize);
@@ -91,7 +103,7 @@ async function initialize() {
     if (!response.ok) {
       throw new Error(`API call failed with status: ${response.status}`);
     }
-    const data = await response.json();
+    const data: AllData & { success?: boolean, message?: string } = await response.json();
 
     // Kiểm tra xem API có trả về lỗi App Script không
     if (data.success === false) {
@@ -106,7 +118,7 @@ async function initialize() {
     // Xác định các hãng có máy pha màu
     // Logic: Một hãng có máy pha màu nếu nó có ít nhất 1 ParentProduct 
     // có định nghĩa `color_mixing_product_type`.
-    const mixingBrandIds = new Set();
+    const mixingBrandIds = new Set<string | number>();
     if (DB.parentProducts) {
       DB.parentProducts.forEach(pp => {
         // Nếu `color_mixing_product_type` tồn tại và không rỗng
@@ -131,7 +143,7 @@ async function initialize() {
     appContainer.classList.remove('hidden');
     console.log("Khởi tạo hoàn tất.");
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Lỗi nghiêm trọng khi khởi tạo:", error);
     loader.innerHTML = `
             <p style="color: red;"><strong>Đã xảy ra lỗi khi tải dữ liệu!</strong></p>
@@ -143,10 +155,10 @@ async function initialize() {
 
 /**
  * Hiển thị danh sách hãng (Trademarks) vào <select>
- * @param {Set<string>} mixingBrandIds - Set các ID của hãng có máy pha màu
+ * @param mixingBrandIds - Set các ID của hãng có máy pha màu
  * @returns {void}
  */
-function renderTrademarks(mixingBrandIds) { // <--- ĐÃ CẬP NHẬT
+function renderTrademarks(mixingBrandIds: Set<string | number>) { // <--- ĐÃ CẬP NHẬT
   if (!DB.trademarks) {
     console.warn("Không tìm thấy DB.trademarks");
     return;
@@ -155,7 +167,7 @@ function renderTrademarks(mixingBrandIds) { // <--- ĐÃ CẬP NHẬT
 
   // --- BẮT ĐẦU CẢI TIẾN ---
   // Sắp xếp lại danh sách: ưu tiên hãng có máy pha màu lên đầu, sau đó sắp xếp theo tên
-  const sortedTrademarks = [...DB.trademarks].sort((a, b) => {
+  const sortedTrademarks: Trademark[] = [...DB.trademarks].sort((a, b) => {
     const aHasMixing = mixingBrandIds.has(a.id);
     const bHasMixing = mixingBrandIds.has(b.id);
 
@@ -169,7 +181,7 @@ function renderTrademarks(mixingBrandIds) { // <--- ĐÃ CẬP NHẬT
 
   sortedTrademarks.forEach(brand => { // <--- ĐÃ CẬP NHẬT (dùng sortedTrademarks)
     const option = document.createElement('option');
-    option.value = brand.id;
+    option.value = String(brand.id);
 
     // --- BẮT ĐẦU CẢI TIẾN ---
     // Thêm dấu hiệu nhận biết
@@ -188,10 +200,10 @@ function renderTrademarks(mixingBrandIds) { // <--- ĐÃ CẬP NHẬT
 
 /**
  * Hiển thị danh sách màu (Colors) ra UI
- * @param {Array} colorsToRender - Mảng các đối tượng màu cần hiển thị
+ * @param colorsToRender - Mảng các đối tượng màu cần hiển thị
  * @returns {void}
  */
-function renderColors(colorsToRender) {
+function renderColors(colorsToRender: Color[]) {
   colorListContainer.innerHTML = ''; // Xóa nội dung cũ
   if (!colorsToRender || colorsToRender.length === 0) {
     colorListContainer.innerHTML = '<p>Không tìm thấy màu phù hợp.</p>';
@@ -202,7 +214,7 @@ function renderColors(colorsToRender) {
     const item = document.createElement('div');
     item.className = 'color-item';
     // Truyền ID vào dataset để lấy khi click
-    item.dataset.colorId = color.id;
+    item.dataset.colorId = String(color.id);
     item.innerHTML = `
             <div class="color-swatch" style="background-color: ${color.hexCode || '#eee'}"></div>
             <div class="color-info">
@@ -246,7 +258,7 @@ function applyFilters() {
   const brandId = trademarkFilter.value;
   const searchTerm = colorSearch.value.toLowerCase().trim();
 
-  let filteredColors = fullColorList;
+  let filteredColors: Color[] = fullColorList;
 
   // 1. Lọc theo Hãng
   if (brandId !== 'all') {
@@ -271,14 +283,17 @@ function applyFilters() {
  * Xử lý sự kiện khi người dùng click vào một màu.
  * Lọc ra các dòng sản phẩm (ParentProduct) phù hợp với màu đã chọn
  * và chuyển sang panel hiển thị danh sách dòng sản phẩm.
- * @param {object} color - Đối tượng màu đã chọn.
+ * @param color - Đối tượng màu đã chọn.
  * ===================================================================
  */
-function onColorClick(color) {
+function onColorClick(color: Color) {
   console.log("Đã chọn màu:", color);
   currentState.selectedColor = color; // Lưu màu đã chọn
 
   // Logic:
+  if (!DB.colorPricings || !DB.parentProducts) {
+    return;
+  }
   // 1. Lọc `DB.colorPricings` để tìm tất cả các dòng có `color_ref`
   const matchingPricings = DB.colorPricings.filter(p => p.color_ref == color.id);
 
@@ -303,10 +318,10 @@ function onColorClick(color) {
 /**
  * Hiển thị danh sách Dòng sản phẩm (ParentProduct) ra UI.
  * Mỗi dòng sản phẩm sẽ có thể click để xem chi tiết SKU.
- * @param {Array<object>} parentProducts - Mảng các đối tượng ParentProduct cần hiển thị.
+ * @param parentProducts - Mảng các đối tượng ParentProduct cần hiển thị.
  * @returns {void}
  */
-function renderParentProducts(parentProducts) {
+function renderParentProducts(parentProducts: ParentProduct[]) {
   parentProductListContainer.innerHTML = ''; // Xóa nội dung cũ
   if (!parentProducts || parentProducts.length === 0) {
     parentProductListContainer.innerHTML = '<p>Màu này không pha được cho dòng sản phẩm nào.</p>';
@@ -316,7 +331,7 @@ function renderParentProducts(parentProducts) {
   parentProducts.forEach(pp => {
     const item = document.createElement('div');
     item.className = 'list-item';
-    item.dataset.parentProductId = pp.id;
+    item.dataset.parentProductId = String(pp.id);
     item.innerHTML = `
             <strong>${pp.name || 'N/A'}</strong>
             <span>(Loại: ${pp.color_mixing_product_type || 'N/A'})</span>
@@ -333,20 +348,23 @@ function renderParentProducts(parentProducts) {
  * ===================================================================
  * Xử lý sự kiện khi người dùng click vào một dòng sản phẩm (ParentProduct).
  * Tìm kiếm thông tin giá (pricingInfo) và các SKU (lon) phù hợp,
- * sau đó chuyển sang panel hiển thị danh sách SKU.
- * @param {object} parentProduct - Đối tượng ParentProduct đã chọn.
+ * sau đó chuyển sang panel hiển thị danh sách SKU. *
+ * @param parentProduct - Đối tượng ParentProduct đã chọn.
  * ===================================================================
  */
-function onParentProductClick(parentProduct) {
+function onParentProductClick(parentProduct: ParentProduct) {
   console.log("Đã chọn Dòng SP:", parentProduct);
   currentState.selectedParentProduct = parentProduct; // Lưu dòng SP đã chọn
 
-  const colorId = currentState.selectedColor.id;
-  const productType = parentProduct.color_mixing_product_type; // (ví dụ: 'int_1')
-
   // 2. Logic (phức tạp):
+  if (!currentState.selectedColor || !DB.colorPricings || !DB.products) {
+    return;
+  }
+  const colorId = currentState.selectedColor.id;
+  const productType = parentProduct.color_mixing_product_type;
+
   // Tìm MỘT (1) dòng trong `DB.colorPricings` khớp CẢ HAI
-  const pricingInfo = DB.colorPricings.find(p =>
+  const pricingInfo: ColorPricing | undefined = DB.colorPricings.find(p =>
     p.color_ref == colorId && p.color_mixing_product_type == productType
   );
 
@@ -376,15 +394,15 @@ function onParentProductClick(parentProduct) {
 /**
  * ===================================================================
  * BƯỚC 4: TÍNH GIÁ (Hàm calculatePrice)
- * ===================================================================
+ * =================================================================== *
  * Tính toán giá base, giá màu thêm và giá thành phẩm cho một SKU cụ thể.
- * @param {object} sku - Đối tượng SKU từ DB.products
- * @param {object} pricingInfo - Đối tượng pricingInfo từ DB.colorPricings
+ * @param sku - Đối tượng SKU từ DB.products
+ * @param pricingInfo - Đối tượng pricingInfo từ DB.colorPricings
  * @returns {{giaBase: number, giaMau: number, giaThanhPham: number}} Các thành phần giá
  */
-function calculatePrice(sku, pricingInfo) {
-  const giaBase = parseFloat(sku.basePrice) || 0;
-  const unitValue = parseFloat(sku.unit_value) || 0;
+function calculatePrice(sku: Product, pricingInfo: ColorPricing) {
+  const giaBase = parseFloat(String(sku.basePrice)) || 0;
+  const unitValue = parseFloat(String(sku.unit_value)) || 0;
 
   // Chuyển đổi dung tích sang mililit để tính giá màu chính xác
   let volumeInMl = 0;
@@ -400,7 +418,7 @@ function calculatePrice(sku, pricingInfo) {
   }
 
   // pricePerMl là giá thêm cho mỗi mililit
-  const giaMau = parseFloat(pricingInfo.pricePerMl) * volumeInMl;
+  const giaMau = (parseFloat(String(pricingInfo.pricePerMl)) || 0) * volumeInMl;
   const giaThanhPham = giaBase + giaMau;
 
   return { giaBase, giaMau, giaThanhPham };
@@ -409,13 +427,13 @@ function calculatePrice(sku, pricingInfo) {
 /**
  * ===================================================================
  * BƯỚC 4: HIỂN THỊ SKU VÀ GIÁ (Hàm renderSKUs)
- * ===================================================================
+ * =================================================================== *
  * Hiển thị danh sách các SKU (lon) phù hợp cùng với thông tin giá đã tính toán.
- * @param {Array<object>} skus - Mảng các đối tượng SKU cần hiển thị.
- * @param {object} pricingInfo - Thông tin giá pha màu cho màu và loại sản phẩm hiện tại.
+ * @param skus - Mảng các đối tượng SKU cần hiển thị.
+ * @param pricingInfo - Thông tin giá pha màu cho màu và loại sản phẩm hiện tại.
  * @returns {void}
  */
-function renderSKUs(skus, pricingInfo) {
+function renderSKUs(skus: Product[], pricingInfo: ColorPricing) {
   skuListContainer.innerHTML = ''; // Xóa nội dung cũ
   if (!skus || skus.length === 0) {
     skuListContainer.innerHTML = '<p>Không tìm thấy lon (SKU) phù hợp cho loại base này.</p>';
@@ -432,23 +450,21 @@ function renderSKUs(skus, pricingInfo) {
       loaderElement.setAttribute('aria-atomic', 'true');
     }
 
-    const item = document.createElement('div');
-    item.className = 'sku-item';
-    item.innerHTML = `
-            <div class="sku-name">${sku.name}</div>
-            <div class="price-row">
-                <span>Giá Base (${sku.base}):</span>
-                <span>${giaBase.toLocaleString('vi-VN')} đ</span>
-            </div>
-            <div class="price-row">
-                <span>Giá Màu (Thêm):</span>
-                <span>${giaMau.toLocaleString('vi-VN')} đ</span>
-            </div>
-            <div class="price-row total">
-                <span>Giá Thành Phẩm:</span>
-                <span>${giaThanhPham.toLocaleString('vi-VN')} đ</span>
-            </div>
-        `;
+    const item = createElement('div', { className: 'sku-item' },
+      createElement('div', { className: 'sku-name', textContent: sku.name }),
+      createElement('div', { className: 'price-row' },
+        createElement('span', { textContent: `Giá Base (${sku.base}):` }),
+        createElement('span', { textContent: `${giaBase.toLocaleString('vi-VN')} đ` })
+      ),
+      createElement('div', { className: 'price-row' },
+        createElement('span', { textContent: 'Giá Màu (Thêm):' }),
+        createElement('span', { textContent: `${giaMau.toLocaleString('vi-VN')} đ` })
+      ),
+      createElement('div', { className: 'price-row total' },
+        createElement('span', { textContent: 'Giá Thành Phẩm:' }),
+        createElement('span', { textContent: `${giaThanhPham.toLocaleString('vi-VN')} đ` })
+      )
+    );
     skuListContainer.appendChild(item);
   });
 }
@@ -461,13 +477,31 @@ function renderSKUs(skus, pricingInfo) {
  */
 
 /**
- * Hàm điều hướng chung
- * @param {string} panelName - Tên panel ('colors', 'parentProducts', 'skus')
- * @param {string} title - Tiêu đề mới
+ * Hàm trợ giúp để tạo phần tử DOM một cách an toàn và có cấu trúc.
+ * @param tag Tên thẻ HTML (ví dụ: 'div', 'span').
+ * @param props Các thuộc tính để gán cho phần tử (ví dụ: className, textContent).
+ * @param children Các phần tử con để nối vào.
+ * @returns Phần tử HTMLElement đã được tạo.
  */
-function navigateToPanel(panelName, title) {
+function createElement<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  props: Partial<Omit<HTMLElementTagNameMap[K], 'style'>> & { style?: Partial<CSSStyleDeclaration> },
+  ...children: (HTMLElement | string)[]
+): HTMLElementTagNameMap[K] {
+  const element = document.createElement(tag);
+  Object.assign(element, props);
+  children.forEach(child => element.append(child));
+  return element;
+}
+
+/**
+ * Hàm điều hướng chung
+ * @param panelName - Tên panel
+ * @param title - Tiêu đề mới
+ */
+function navigateToPanel(panelName: AppState['panel'], title: string) {
   // Ẩn tất cả các panel
-  Object.values(panels).forEach(panel => panel.classList.remove('active'));
+  Object.values(panels).forEach(panel => panel?.classList.remove('active'));
 
   // Hiển thị panel được chọn
   if (panels[panelName]) {
@@ -500,11 +534,11 @@ function navigateToPanel(panelName, title) {
  * Xử lý sự kiện khi người dùng nhấn nút "Back".
  * Điều hướng người dùng quay lại panel trước đó dựa trên `currentState.panel`.
  * @returns {void}
- * Xử lý khi nhấn nút Back
  */
 function handleBackClick() {
   if (currentState.panel === 'skus') {
     // Từ SKU quay về Dòng SP (ParentProduct)
+    if (!currentState.selectedColor) return;
     // Cần gọi lại onColorClick để render lại danh sách ParentProduct
     onColorClick(currentState.selectedColor);
   } else if (currentState.panel === 'parentProducts') {

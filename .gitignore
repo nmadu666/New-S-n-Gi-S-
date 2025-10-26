@@ -1,0 +1,22 @@
+# ===================================================================
+# GIT IGNORE FILE
+# ===================================================================
+# Tệp này chỉ cho Git biết những tệp và thư mục nào cần bỏ qua.
+
+# 1. Bỏ qua các thư mục chứa thư viện (Dependencies)
+# Chúng có thể được cài đặt lại bằng `npm install`
+/apps_script/node_modules
+/chrome_extension/node_modules
+
+# 2. Bỏ qua các thư mục build (Build output)
+# Chúng được tạo ra tự động từ mã nguồn trong `src`
+/apps_script/dist
+/chrome_extension/dist
+
+# 3. Bỏ qua các tệp log
+npm-debug.log*
+
+# 4. Bỏ qua các tệp của hệ điều hành và trình soạn thảo code
+.DS_Store
+.vscode/
+.idea/
