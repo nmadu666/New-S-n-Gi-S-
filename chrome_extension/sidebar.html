@@ -11,8 +11,11 @@
 
   <!-- Loader hiển thị khi chờ API -->
   <div id="loader" aria-live="polite" aria-atomic="true">
-    <div class="spinner"></div>
-    <p>Đang đồng bộ dữ liệu...</p>
+    <p id="loader-text">Đang đồng bộ dữ liệu...</p>
+    <div class="progress-bar-container">
+      <div class="progress-bar-value" id="progress-bar-value"></div>
+      <span id="progress-percentage">0%</span>
+    </div>
   </div>
 
   <!-- Container chính của ứng dụng, mặc định bị ẩn -->
@@ -21,7 +24,10 @@
     <!-- Header: Chứa các bộ lọc -->
     <header id="header">
       <select id="trademark-filter"></select>
+      <select id="tone-filter"></select>
+      <select id="sort-filter"></select>
       <input type="search" id="color-search" placeholder="Tìm tên/mã màu...">
+      <button id="clear-filters-button" class="hidden">Xóa tất cả bộ lọc</button>
     </header>
 
     <!-- Điều hướng: Nút Back và Tiêu đề -->

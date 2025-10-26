@@ -36,6 +36,8 @@ export interface ColorPricing {
 export interface Product {
   id: string | number;
   name: string;
+  fullName: string; // Tên đầy đủ của SKU để hiển thị
+  code: string; // Mã SKU của sản phẩm
   parent_product_ref: string;
   base: string;
   basePrice: number;

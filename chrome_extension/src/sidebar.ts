@@ -15,6 +15,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycbxub034UvLNAad2lkELjIkR
 // --- START CACHING CONFIG ---
 const CACHE_KEY = 'paint_app_data_v1'; // Thay đổi version để xóa cache cũ khi có thay đổi lớn
 const CACHE_DURATION_MS = 60 * 60 * 1000; // Thời gian cache: 1 giờ (60 phút * 60 giây * 1000 ms)
+const FILTER_STATE_KEY = 'paint_app_filters_v1'; // Key để lưu trạng thái bộ lọc
 // --- END CACHING CONFIG ---
 
 // Định nghĩa kiểu cho State
@@ -41,7 +42,10 @@ const DOM_IDS = {
   LOADER: 'loader',
   APP_CONTAINER: 'app-container',
   TRADEMARK_FILTER: 'trademark-filter',
+  TONE_FILTER: 'tone-filter',
+  SORT_FILTER: 'sort-filter',
   COLOR_SEARCH: 'color-search',
+  CLEAR_FILTERS_BUTTON: 'clear-filters-button',
   BACK_BUTTON: 'back-button',
   REFRESH_BUTTON: 'refresh-button',
   PANEL_TITLE: 'panel-title',
@@ -58,11 +62,15 @@ const DOM_IDS = {
 const loader = document.getElementById(DOM_IDS.LOADER) as HTMLElement;
 const appContainer = document.getElementById(DOM_IDS.APP_CONTAINER) as HTMLElement;
 const trademarkFilter = document.getElementById(DOM_IDS.TRADEMARK_FILTER) as HTMLSelectElement;
+const toneFilter = document.getElementById(DOM_IDS.TONE_FILTER) as HTMLSelectElement;
+const sortFilter = document.getElementById(DOM_IDS.SORT_FILTER) as HTMLSelectElement;
 const colorSearch = document.getElementById(DOM_IDS.COLOR_SEARCH) as HTMLInputElement;
+const clearFiltersButton = document.getElementById(DOM_IDS.CLEAR_FILTERS_BUTTON) as HTMLButtonElement;
 const backButton = document.getElementById(DOM_IDS.BACK_BUTTON) as HTMLButtonElement;
 const refreshButton = document.getElementById(DOM_IDS.REFRESH_BUTTON) as HTMLButtonElement;
 const panelTitle = document.getElementById(DOM_IDS.PANEL_TITLE) as HTMLElement;
 const headerElement = document.getElementById(DOM_IDS.HEADER) as HTMLElement;
+const contentElement = document.getElementById('content') as HTMLElement;
 
 // Các panel (sử dụng hằng số)
 const panels = {
@@ -86,7 +94,10 @@ document.addEventListener('DOMContentLoaded', initialize);
  * @returns {void}
  */
 trademarkFilter.addEventListener('change', handleTrademarkFilter);
+toneFilter.addEventListener('change', handleToneFilter);
+sortFilter.addEventListener('change', handleSortFilter);
 colorSearch.addEventListener('input', handleColorSearch);
+clearFiltersButton.addEventListener('click', handleClearFiltersClick);
 backButton.addEventListener('click', handleBackClick);
 refreshButton.addEventListener('click', handleRefreshClick);
 
@@ -193,12 +204,146 @@ function setupApplication(data: AllData) {
 
   renderTrademarks(mixingBrandIds);
 
+  renderToneFilter();
+
+  renderSortFilter();
+
+  restoreFilterState(); // Khôi phục trạng thái bộ lọc đã lưu
+
   fullColorList = DB.colors || [];
-  renderColors(fullColorList);
+  applyFilters(); // Áp dụng bộ lọc ngay khi khởi động
 
   loader.classList.add('hidden');
   appContainer.classList.remove('hidden');
   console.log("Ứng dụng đã được thiết lập thành công.");
+
+  // Hiển thị panel màu ban đầu một cách chính xác
+  panels.colors.style.opacity = '1';
+}
+
+/**
+ * Chuyển đổi một mã màu hex thành giá trị độ sáng HSL.
+ * @param hex - Chuỗi mã màu hex (ví dụ: "#RRGGBB" hoặc "#RGB").
+ * @returns Một giá trị độ sáng từ 0 (tối nhất) đến 1 (sáng nhất). Trả về 0 cho màu không hợp lệ.
+ */
+function getLightnessFromHex(hex: string): number {
+  if (!hex || typeof hex !== 'string') {
+    return 0; // Mặc định là màu tối nếu hex không hợp lệ
+  }
+
+  // Xóa ký tự '#'
+  let cleanHex = hex.startsWith('#') ? hex.slice(1) : hex;
+
+  // Chuyển đổi hex 3 ký tự thành 6 ký tự (ví dụ: "F0C" -> "FF00CC")
+  if (cleanHex.length === 3) {
+    cleanHex = cleanHex.split('').map(char => char + char).join('');
+  }
+
+  if (cleanHex.length !== 6) {
+    return 0; // Trả về 0 nếu hex không hợp lệ
+  }
+
+  const r = parseInt(cleanHex.substring(0, 2), 16) / 255;
+  const g = parseInt(cleanHex.substring(2, 4), 16) / 255;
+  const b = parseInt(cleanHex.substring(4, 6), 16) / 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+
+  // Công thức tính độ sáng (Lightness) trong mô hình màu HSL
+  const lightness = (max + min) / 2;
+
+  return lightness;
+}
+
+/**
+ * Phân loại một mã màu hex vào một tone màu cụ thể.
+ * @param hex - Chuỗi mã màu hex.
+ * @returns Tên của tone màu.
+ */
+function getToneFromHex(hex: string): string {
+  if (!hex || typeof hex !== 'string') return 'Khác';
+
+  // Chuyển đổi HEX sang HSL (Hue, Saturation, Lightness)
+  let cleanHex = hex.startsWith('#') ? hex.slice(1) : hex;
+  if (cleanHex.length === 3) {
+    cleanHex = cleanHex.split('').map(char => char + char).join('');
+  }
+  if (cleanHex.length !== 6) return 'Khác';
+
+  const r = parseInt(cleanHex.substring(0, 2), 16) / 255;
+  const g = parseInt(cleanHex.substring(2, 4), 16) / 255;
+  const b = parseInt(cleanHex.substring(4, 6), 16) / 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0, s = 0, l = (max + min) / 2;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
+  }
+
+  h = Math.round(h * 360); // Chuyển Hue về thang 0-360
+
+  // Phân loại dựa trên H, S, L
+  if (l > 0.95) return 'Trắng';
+  if (s < 0.1) {
+    if (l < 0.2) return 'Xám & Đen'; // Đen
+    return 'Xám & Đen'; // Xám
+  }
+  if (h >= 0 && h < 15) return 'Đỏ & Hồng';
+  if (h >= 15 && h < 45) {
+    if (s < 0.4) return 'Be & Nâu';
+    return 'Cam & Đào';
+  }
+  if (h >= 45 && h < 65) return 'Vàng';
+  if (h >= 65 && h < 160) return 'Xanh lá';
+  if (h >= 160 && h < 260) return 'Xanh dương';
+  if (h >= 260 && h < 340) return 'Tím';
+  if (h >= 340 && h <= 360) return 'Đỏ & Hồng';
+
+  return 'Khác';
+}
+
+/**
+ * Hiển thị danh sách các tone màu vào bộ lọc.
+ */
+function renderToneFilter() {
+  const tones = [
+    'Tất cả tone màu',
+    'Trắng',
+    'Xám & Đen',
+    'Be & Nâu',
+    'Vàng',
+    'Cam & Đào',
+    'Đỏ & Hồng',
+    'Tím',
+    'Xanh dương',
+    'Xanh lá',
+    'Khác'
+  ];
+  toneFilter.innerHTML = tones.map(tone => `<option value="${tone}">${tone}</option>`).join('');
+}
+
+/**
+ * Hiển thị các tùy chọn sắp xếp vào bộ lọc.
+ */
+function renderSortFilter() {
+  const sortOptions = {
+    'lightness-desc': 'Sắp xếp: Sáng tới tối',
+    'lightness-asc': 'Sắp xếp: Tối tới sáng',
+    'name-asc': 'Sắp xếp: Theo tên A-Z',
+    'name-desc': 'Sắp xếp: Theo tên Z-A',
+  };
+
+  sortFilter.innerHTML = Object.entries(sortOptions).map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
 }
 
 /**
@@ -258,19 +403,61 @@ function renderColors(colorsToRender: Color[]) {
     return;
   }
 
-  colorsToRender.forEach(color => {
+  colorsToRender.forEach((color, index) => {
     const item = document.createElement('div');
     item.className = 'color-item';
+
+    // --- START STAGGERED ANIMATION ---
+    // Thêm độ trễ cho mỗi item để tạo hiệu ứng so le
+    item.style.animationDelay = `${index * 20}ms`;
+    // --- END STAGGERED ANIMATION ---
+
+    // --- START TOOLTIP IMPROVEMENT ---
+    // Thêm tooltip để hiển thị tên đầy đủ khi di chuột vào
+    item.title = color.name;
+    // --- END TOOLTIP IMPROVEMENT ---
+
     // Truyền ID vào dataset để lấy khi click
     item.dataset.colorId = String(color.id);
-    item.innerHTML = `
-            <div class="color-swatch" style="background-color: ${color.hexCode || '#eee'}"></div>
-            <div class="color-info">
-                <span class="color-code">${color.code || 'N/A'}</span>
-                <span class="color-name">${color.name || '...'}</span>
-            </div>
-        `;
-    // Gắn sự kiện click
+
+    // Tạo các phần tử con để dễ dàng gắn sự kiện
+    const swatch = document.createElement('div');
+    swatch.className = 'color-swatch';
+    swatch.style.backgroundColor = color.hexCode || '#eee';
+
+    const copyButton = document.createElement('button');
+    copyButton.className = 'copy-button';
+    copyButton.textContent = 'Copy';
+    copyButton.title = `Sao chép mã màu ${color.code}`;
+
+    // Gắn sự kiện sao chép
+    copyButton.addEventListener('click', (e) => {
+      e.stopPropagation(); // Ngăn không cho sự kiện click của thẻ màu được kích hoạt
+      navigator.clipboard.writeText(color.code).then(() => {
+        copyButton.textContent = 'Đã chép!';
+        copyButton.classList.add('copied');
+        setTimeout(() => {
+          copyButton.textContent = 'Copy';
+          copyButton.classList.remove('copied');
+        }, 1500);
+      }).catch(err => {
+        console.error('Không thể sao chép mã màu: ', err);
+        copyButton.textContent = 'Lỗi';
+      });
+    });
+
+    swatch.appendChild(copyButton);
+
+    const info = document.createElement('div');
+    info.className = 'color-info';
+    info.innerHTML = `<span class="color-code">${color.code || 'N/A'}</span>
+      ${(color as any).ncsCode ? `<span class="color-ncs">NCS: ${(color as any).ncsCode}</span>` : ''}
+      <span class="color-name">${color.name || '...'}</span>`;
+
+    item.appendChild(swatch);
+    item.appendChild(info);
+
+    // Gắn sự kiện click cho toàn bộ thẻ màu
     item.addEventListener('click', () => onColorClick(color));
     colorListContainer.appendChild(item);
   });
@@ -284,6 +471,23 @@ function renderColors(colorsToRender: Color[]) {
  * @returns {void}
  */
 function handleTrademarkFilter() {
+  saveFilterState();
+  applyFilters();
+}
+
+/**
+ * Xử lý sự kiện khi bộ lọc tone màu thay đổi.
+ */
+function handleToneFilter() {
+  saveFilterState();
+  applyFilters();
+}
+
+/**
+ * Xử lý sự kiện khi bộ lọc sắp xếp thay đổi.
+ */
+function handleSortFilter() {
+  saveFilterState();
   applyFilters();
 }
 
@@ -293,7 +497,75 @@ function handleTrademarkFilter() {
  * @returns {void}
  */
 function handleColorSearch() {
+  saveFilterState();
   applyFilters();
+}
+
+/**
+ * Xử lý sự kiện khi người dùng nhấn nút "Xóa bộ lọc".
+ */
+function handleClearFiltersClick() {
+  // Đặt lại giá trị của các bộ lọc về mặc định
+  trademarkFilter.value = 'all';
+  toneFilter.value = 'Tất cả tone màu';
+  sortFilter.value = 'lightness-desc';
+  colorSearch.value = '';
+
+  // Lưu lại trạng thái mặc định và áp dụng bộ lọc
+  saveFilterState();
+  applyFilters();
+}
+
+/**
+ * Lưu trạng thái hiện tại của các bộ lọc vào localStorage.
+ */
+function saveFilterState() {
+  const filterState = {
+    trademark: trademarkFilter.value,
+    tone: toneFilter.value,
+    sort: sortFilter.value,
+    search: colorSearch.value,
+  };
+  localStorage.setItem(FILTER_STATE_KEY, JSON.stringify(filterState));
+  updateClearFiltersButtonVisibility(); // Cập nhật trạng thái nút xóa
+}
+
+/**
+ * Khôi phục trạng thái của các bộ lọc từ localStorage.
+ */
+function restoreFilterState() {
+  const savedStateJSON = localStorage.getItem(FILTER_STATE_KEY);
+  if (savedStateJSON) {
+    try {
+      const savedState = JSON.parse(savedStateJSON);
+      trademarkFilter.value = savedState.trademark || 'all';
+      toneFilter.value = savedState.tone || 'Tất cả tone màu';
+      sortFilter.value = savedState.sort || 'lightness-desc';
+      colorSearch.value = savedState.search || '';
+      console.log("Đã khôi phục trạng thái bộ lọc:", savedState);
+    } catch (e) {
+      console.error("Lỗi khôi phục trạng thái bộ lọc:", e);
+      localStorage.removeItem(FILTER_STATE_KEY);
+    }
+  }
+}
+
+/**
+ * Cập nhật trạng thái hiển thị của nút "Xóa bộ lọc".
+ * Nút chỉ hiển thị khi có ít nhất một bộ lọc đang được áp dụng.
+ */
+function updateClearFiltersButtonVisibility() {
+  const isDefaultState =
+    trademarkFilter.value === 'all' &&
+    toneFilter.value === 'Tất cả tone màu' &&
+    sortFilter.value === 'lightness-desc' &&
+    colorSearch.value === '';
+
+  if (isDefaultState) {
+    clearFiltersButton.classList.add('hidden');
+  } else {
+    clearFiltersButton.classList.remove('hidden');
+  }
 }
 
 /**
@@ -304,7 +576,10 @@ function handleColorSearch() {
  */
 function applyFilters() {
   const brandId = trademarkFilter.value;
+  const selectedTone = toneFilter.value;
   const searchTerm = colorSearch.value.toLowerCase().trim();
+
+  updateClearFiltersButtonVisibility(); // Cập nhật trạng thái nút xóa mỗi khi lọc
 
   let filteredColors: Color[] = fullColorList;
 
@@ -313,7 +588,12 @@ function applyFilters() {
     filteredColors = filteredColors.filter(color => color.trademark_ref == brandId);
   }
 
-  // 2. Lọc theo Từ khóa tìm kiếm (tìm cả tên và mã màu)
+  // 2. Lọc theo Tone màu
+  if (selectedTone !== 'Tất cả tone màu') {
+    filteredColors = filteredColors.filter(color => getToneFromHex(color.hexCode) === selectedTone);
+  }
+
+  // 3. Lọc theo Từ khóa tìm kiếm (tìm cả tên và mã màu)
   if (searchTerm) {
     filteredColors = filteredColors.filter(color =>
       (color.name && color.name.toLowerCase().includes(searchTerm)) ||
@@ -321,7 +601,34 @@ function applyFilters() {
     );
   }
 
-  renderColors(filteredColors);
+  // 4. Sắp xếp kết quả
+  sortAndRenderColors(filteredColors);
+}
+
+/**
+ * Sắp xếp và render danh sách màu dựa trên tùy chọn của người dùng.
+ * @param colors - Mảng màu cần được sắp xếp và render.
+ */
+function sortAndRenderColors(colors: Color[]) {
+  const sortBy = sortFilter.value;
+  const sortedColors = [...colors]; // Tạo một bản sao để không thay đổi mảng gốc
+
+  switch (sortBy) {
+    case 'lightness-desc':
+      sortedColors.sort((a, b) => getLightnessFromHex(b.hexCode) - getLightnessFromHex(a.hexCode));
+      break;
+    case 'lightness-asc':
+      sortedColors.sort((a, b) => getLightnessFromHex(a.hexCode) - getLightnessFromHex(b.hexCode));
+      break;
+    case 'name-asc':
+      sortedColors.sort((a, b) => a.name.localeCompare(b.name));
+      break;
+    case 'name-desc':
+      sortedColors.sort((a, b) => b.name.localeCompare(a.name));
+      break;
+  }
+
+  renderColors(sortedColors);
 }
 
 /**
@@ -376,9 +683,11 @@ function renderParentProducts(parentProducts: ParentProduct[]) {
     return;
   }
 
-  parentProducts.forEach(pp => {
+  parentProducts.forEach((pp, index) => {
     const item = document.createElement('div');
     item.className = 'list-item';
+    // Thêm độ trễ animation so le
+    item.style.animationDelay = `${index * 30}ms`;
     item.dataset.parentProductId = String(pp.id);
     item.innerHTML = `
             <strong>${pp.name || 'N/A'}</strong>
@@ -452,24 +761,30 @@ function calculatePrice(sku: Product, pricingInfo: ColorPricing) {
   const giaBase = parseFloat(String(sku.basePrice)) || 0;
   const unitValue = parseFloat(String(sku.unit_value)) || 0;
 
-  // Chuyển đổi dung tích sang mililit để tính giá màu chính xác
-  let volumeInMl = 0;
-  if (sku.unit === 'Lít') {
-    volumeInMl = unitValue * 1000; // 1 Lít = 1000 ml
-  } else if (sku.unit === 'ml') {
-    volumeInMl = unitValue; // Đã là mililit
+  // 1. Tính giá màu thô
+  const rawGiaMau = (parseFloat(String(pricingInfo.pricePerMl)) || 0) * unitValue;
+
+  // 2. Áp dụng hệ số nhân theo quy định của cửa hàng
+  let calculatedGiaMau: number;
+  if (rawGiaMau > 500000) {
+    calculatedGiaMau = rawGiaMau * 1.15;
   } else {
-    // Xử lý các đơn vị khác nếu có, hoặc đưa ra cảnh báo.
-    // Hiện tại, giả định các sản phẩm pha màu luôn có đơn vị thể tích.
-    console.warn(`Đơn vị không xác định cho SKU ${sku.id}: ${sku.unit}. Giả định unit_value là Lít.`);
-    volumeInMl = unitValue * 1000;
+    calculatedGiaMau = rawGiaMau * 1.2;
   }
 
-  // pricePerMl là giá thêm cho mỗi mililit
-  const giaMau = (parseFloat(String(pricingInfo.pricePerMl)) || 0) * volumeInMl;
-  const giaThanhPham = giaBase + giaMau;
+  // 3. Áp dụng giá màu tối thiểu (giá sàn) dựa trên dung tích (unit_value)
+  let finalGiaMau: number;
+  if (unitValue < 2) {
+    finalGiaMau = Math.max(calculatedGiaMau, 10000);
+  } else if (unitValue < 10) {
+    finalGiaMau = Math.max(calculatedGiaMau, 20000);
+  } else { // unitValue >= 10
+    finalGiaMau = Math.max(calculatedGiaMau, 30000);
+  }
 
-  return { giaBase, giaMau, giaThanhPham };
+  const giaThanhPham = giaBase + finalGiaMau;
+
+  return { giaBase, giaMau: finalGiaMau, giaThanhPham };
 }
 
 /**
@@ -488,7 +803,7 @@ function renderSKUs(skus: Product[], pricingInfo: ColorPricing) {
     return;
   }
 
-  skus.forEach(sku => {
+  skus.forEach((sku, index) => {
     const { giaBase, giaMau, giaThanhPham } = calculatePrice(sku, pricingInfo);
 
     // Thêm thuộc tính aria-live cho loader
@@ -498,8 +813,29 @@ function renderSKUs(skus: Product[], pricingInfo: ColorPricing) {
       loaderElement.setAttribute('aria-atomic', 'true');
     }
 
+    const copySkuButton = createElement('button', {
+      className: 'sku-copy-button',
+      textContent: 'Chép mã',
+      title: `Sao chép mã SKU: ${sku.code}`,
+    });
+
+    copySkuButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!sku.code) return;
+      navigator.clipboard.writeText(sku.code).then(() => {
+        copySkuButton.textContent = 'Đã chép!';
+        copySkuButton.classList.add('copied');
+        setTimeout(() => {
+          copySkuButton.textContent = 'Chép mã';
+          copySkuButton.classList.remove('copied');
+        }, 1500);
+      }).catch(err => {
+        console.error('Không thể sao chép mã SKU: ', err);
+      });
+    });
+
     const item = createElement('div', { className: 'sku-item' },
-      createElement('div', { className: 'sku-name', textContent: sku.name }),
+      createElement('div', { className: 'sku-name' }, createElement('span', { textContent: sku.fullName }), copySkuButton),
       createElement('div', { className: 'price-row' },
         createElement('span', { textContent: `Giá Base (${sku.base}):` }),
         createElement('span', { textContent: `${giaBase.toLocaleString('vi-VN')} đ` })
@@ -513,6 +849,8 @@ function renderSKUs(skus: Product[], pricingInfo: ColorPricing) {
         createElement('span', { textContent: `${giaThanhPham.toLocaleString('vi-VN')} đ` })
       )
     );
+    // Thêm độ trễ animation so le
+    item.style.animationDelay = `${index * 40}ms`;
     skuListContainer.appendChild(item);
   });
 }
@@ -548,12 +886,23 @@ function createElement<K extends keyof HTMLElementTagNameMap>(
  * @param title - Tiêu đề mới
  */
 function navigateToPanel(panelName: AppState['panel'], title: string) {
-  // Ẩn tất cả các panel
-  Object.values(panels).forEach(panel => panel?.classList.remove('active'));
+  const panelOrder = ['colors', 'parentProducts', 'skus'];
+  const panelIndex = panelOrder.indexOf(panelName);
+  const oldPanelIndex = panelOrder.indexOf(currentState.panel);
 
-  // Hiển thị panel được chọn
-  if (panels[panelName]) {
-    panels[panelName].classList.add('active');
+  if (contentElement && panelIndex > -1) {
+    const offset = panelIndex * -100; // Dịch chuyển sang trái theo %
+    contentElement.style.transform = `translateX(${offset}%)`;
+
+    // --- START FADE + SLIDE IMPROVEMENT ---
+    // Làm mờ tất cả các panel
+    Object.values(panels).forEach(panel => (panel.style.opacity = '0'));
+
+    // Hiển thị panel mới sau một khoảng trễ nhỏ để hiệu ứng được mượt mà
+    setTimeout(() => {
+      panels[panelName].style.opacity = '1';
+    }, 150); // 150ms là một giá trị tốt, có thể điều chỉnh
+    // --- END FADE + SLIDE IMPROVEMENT ---
   }
 
   // Cập nhật tiêu đề
@@ -563,8 +912,6 @@ function navigateToPanel(panelName: AppState['panel'], title: string) {
   // Quản lý nút back
   if (panelName === 'colors') {
     backButton.classList.add('hidden');
-    // Khi quay về trang màu, reset bộ lọc
-    applyFilters();
   } else {
     backButton.classList.remove('hidden');
   }

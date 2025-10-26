@@ -65,8 +65,22 @@ body {
   border: 1px solid var(--border-color);
 }
 
+#header select + select,
 #header input {
   margin-top: 8px;
+}
+
+#clear-filters-button {
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--primary-color);
+  background-color: transparent;
+  border: 1px solid transparent; /* Giữ layout ổn định */
+  border-radius: 6px;
+  cursor: pointer;
 }
 
 /* Điều hướng Panel */
@@ -102,22 +116,51 @@ body {
   font-weight: 600;
 }
 
-/* Panel chung */
-.panel {
-  display: none;
-  /* Mặc định ẩn các panel */
+/* --- START TRANSITION IMPROVEMENT --- */
+/* Vùng chứa các panel, hoạt động như một "sân khấu" */
+#app-container {
+  overflow-x: hidden; /* Ẩn các panel trượt ra ngoài */
 }
 
-.panel.active {
-  display: block;
-  /* Hiển thị panel active */
+#content {
+  display: flex;
+  position: relative; /* Cần thiết cho việc định vị panel */
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Panel chung */
+.panel {
+  min-width: 100%; /* Mỗi panel chiếm toàn bộ chiều rộng */
+  /* Hiệu ứng mờ dần khi chuyển panel */
+  opacity: 0;
+  transition: opacity 0.25s ease-in-out;
+}
+
+/* Ẩn bộ lọc khi không ở panel màu sắc */
+#header.hidden {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  margin-bottom: 0;
+  transition: all 0.3s ease;
 }
 
 /* Danh sách (grid) màu */
 #color-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); /* Mở rộng thẻ màu */
   gap: 8px;
+}
+
+@keyframes fadeInScaleUp {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .color-item {
@@ -126,6 +169,8 @@ body {
   border-radius: 6px;
   overflow: hidden;
   transition: transform 0.1s ease;
+  opacity: 0; /* Bắt đầu ẩn đi để animation có hiệu lực */
+  animation: fadeInScaleUp 0.3s ease-out forwards; /* 'forwards' giữ lại trạng thái cuối */
 
   &:hover {
     transform: scale(1.05);
@@ -135,9 +180,41 @@ body {
 
 .color-swatch {
   width: 100%;
-  height: 60px;
+  height: 75px; /* Tăng chiều cao tương ứng */
   background-color: var(--light-gray);
   /* Màu fallback */
+  position: relative; /* Cần thiết để định vị nút copy */
+}
+
+.copy-button {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background-color: rgba(0, 0, 0, 0.5);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0; /* Mặc định ẩn đi */
+  transition: opacity 0.2s ease;
+}
+
+.color-item:hover .copy-button {
+  opacity: 1; /* Hiện ra khi di chuột vào thẻ màu */
+}
+
+.copy-button.copied {
+  background-color: #28a745; /* Màu xanh lá khi đã sao chép thành công */
+}
+
+.copy-button:hover {
+  background-color: rgba(0, 0, 0, 0.7);
+}
+.copy-button.copied:hover {
+  background-color: #218838;
 }
 
 .color-info {
@@ -148,7 +225,14 @@ body {
 .color-code {
   font-weight: 600;
   font-size: 13px;
+  display: block; /* Mã màu chính */
+}
+
+.color-ncs {
+  font-size: 11px;
+  color: #777;
   display: block;
+  margin-top: 2px; /* Thêm mã NCS nếu có */
 }
 
 .color-name {
@@ -157,6 +241,18 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  margin-top: 4px;
+}
+
+@keyframes fadeInSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Danh sách sản phẩm/SKU (dạng list) */
@@ -165,6 +261,10 @@ body {
   border-bottom: 1px solid var(--light-gray);
   cursor: pointer;
   font-size: 14px;
+  /* --- START ITEM ANIMATION --- */
+  opacity: 0;
+  animation: fadeInSlideUp 0.4s ease-out forwards;
+  /* --- END ITEM ANIMATION --- */
 }
 
 .list-item:hover {
@@ -190,11 +290,43 @@ body {
   border-radius: 6px;
   margin-bottom: 8px;
   font-size: 14px;
+  /* --- START ITEM ANIMATION --- */
+  opacity: 0;
+  animation: fadeInSlideUp 0.4s ease-out forwards;
+  /* --- END ITEM ANIMATION --- */
 }
 
 .sku-name {
   font-weight: 600;
   margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.sku-copy-button {
+  background-color: var(--light-gray);
+  color: var(--dark-gray);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap; /* Ngăn không cho text xuống dòng */
+}
+
+.sku-copy-button:hover {
+  background-color: #e2e6ea;
+  border-color: #b9c1c9;
+}
+
+.sku-copy-button.copied {
+  background-color: #28a745;
+  border-color: #28a745;
+  color: white;
 }
 
 .price-row {
