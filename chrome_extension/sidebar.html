@@ -11,24 +11,25 @@
 
   <!-- Loader hiển thị khi chờ API -->
   <div id="loader" aria-live="polite" aria-atomic="true">
+    <div class="spinner"></div>
     <p>Đang đồng bộ dữ liệu...</p>
-    <p>Vui lòng chờ trong giây lát.</p>
   </div>
 
   <!-- Container chính của ứng dụng, mặc định bị ẩn -->
   <div id="app-container" class="hidden">
 
     <!-- Header: Chứa các bộ lọc -->
-    <div id="header">
+    <header id="header">
       <select id="trademark-filter"></select>
       <input type="search" id="color-search" placeholder="Tìm tên/mã màu...">
-    </div>
+    </header>
 
     <!-- Điều hướng: Nút Back và Tiêu đề -->
-    <div id="panel-navigation">
+    <nav id="panel-navigation">
       <button id="back-button" class="hidden">‹</button>
+      <button id="refresh-button" title="Làm mới dữ liệu">🔄</button>
       <h2 id="panel-title">Tất Cả Màu</h2>
-    </div>
+    </nav>
 
     <!-- Khu vực nội dung chính, chứa các panel -->
     <div id="content">

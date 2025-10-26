@@ -21,9 +21,29 @@ body {
 
 /* Loader */
 #loader {
-  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 40px 20px; /* Tăng padding */
   text-align: center;
   font-weight: 500;
+  gap: 16px; /* Khoảng cách giữa spinner và text */
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid var(--light-gray);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Ẩn các phần tử */
@@ -67,6 +87,16 @@ body {
   color: var(--primary-color);
 }
 
+#refresh-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 10px;
+  color: #555;
+  margin-left: auto; /* Đẩy nút sang phải */
+}
+
 #panel-title {
   font-size: 16px;
   font-weight: 600;
@@ -96,11 +126,11 @@ body {
   border-radius: 6px;
   overflow: hidden;
   transition: transform 0.1s ease;
-}
 
-.color-item:hover {
-  transform: scale(1.05);
-  border-color: var(--primary-color);
+  &:hover {
+    transform: scale(1.05);
+    border-color: var(--primary-color);
+  }
 }
 
 .color-swatch {

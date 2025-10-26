@@ -7,10 +7,15 @@
  */
 
 import { AllData, Color, ColorPricing, ParentProduct, Product, Trademark } from '@shared/types';
-import './sidebar.css';
+import './sidebar.scss';
 
 // !!! QUAN TRỌNG: DÁN URL APP SCRIPT CỦA BẠN VÀO ĐÂY !!!
 const API_URL = "https://script.google.com/macros/s/AKfycbxub034UvLNAad2lkELjIkRqsN7yJqFCLBnG8pbqNascU6MiC1vODHpQG_UwPhKnMY/exec"; // Thay thế bằng URL của bạn
+
+// --- START CACHING CONFIG ---
+const CACHE_KEY = 'paint_app_data_v1'; // Thay đổi version để xóa cache cũ khi có thay đổi lớn
+const CACHE_DURATION_MS = 60 * 60 * 1000; // Thời gian cache: 1 giờ (60 phút * 60 giây * 1000 ms)
+// --- END CACHING CONFIG ---
 
 // Định nghĩa kiểu cho State
 interface AppState {
@@ -38,6 +43,7 @@ const DOM_IDS = {
   TRADEMARK_FILTER: 'trademark-filter',
   COLOR_SEARCH: 'color-search',
   BACK_BUTTON: 'back-button',
+  REFRESH_BUTTON: 'refresh-button',
   PANEL_TITLE: 'panel-title',
   HEADER: 'header',
   COLOR_LIST_PANEL: 'color-list-panel',
@@ -54,6 +60,7 @@ const appContainer = document.getElementById(DOM_IDS.APP_CONTAINER) as HTMLEleme
 const trademarkFilter = document.getElementById(DOM_IDS.TRADEMARK_FILTER) as HTMLSelectElement;
 const colorSearch = document.getElementById(DOM_IDS.COLOR_SEARCH) as HTMLInputElement;
 const backButton = document.getElementById(DOM_IDS.BACK_BUTTON) as HTMLButtonElement;
+const refreshButton = document.getElementById(DOM_IDS.REFRESH_BUTTON) as HTMLButtonElement;
 const panelTitle = document.getElementById(DOM_IDS.PANEL_TITLE) as HTMLElement;
 const headerElement = document.getElementById(DOM_IDS.HEADER) as HTMLElement;
 
@@ -81,6 +88,7 @@ document.addEventListener('DOMContentLoaded', initialize);
 trademarkFilter.addEventListener('change', handleTrademarkFilter);
 colorSearch.addEventListener('input', handleColorSearch);
 backButton.addEventListener('click', handleBackClick);
+refreshButton.addEventListener('click', handleRefreshClick);
 
 /**
  * ===================================================================
@@ -92,32 +100,86 @@ backButton.addEventListener('click', handleBackClick);
  * @returns {Promise<void>}
  */
 async function initialize() {
-  console.log("Bắt đầu khởi tạo...");
-  try {
-    // 1. Hiển thị thông báo tải
-    loader.classList.remove('hidden');
-    appContainer.classList.add('hidden');
+  console.log("Bắt đầu khởi tạo ứng dụng...");
+  loader.classList.remove('hidden');
+  appContainer.classList.add('hidden');
 
-    // 2. Gọi fetch đến API URL
+  // --- START CACHING LOGIC ---
+  const cachedItem = localStorage.getItem(CACHE_KEY);
+
+  if (cachedItem) {
+    try {
+      const parsedCache = JSON.parse(cachedItem);
+      const cacheAge = Date.now() - parsedCache.timestamp;
+
+      if (cacheAge < CACHE_DURATION_MS) {
+        console.log("Cache hợp lệ. Đang sử dụng...");
+        setupApplication(parsedCache.data);
+        return; // Kết thúc sớm nếu dùng cache thành công
+      } else {
+        console.log("Cache đã hết hạn. Sẽ tải lại dữ liệu mới.");
+        // --- START UX IMPROVEMENT ---
+        // Hiển thị thông báo cho người dùng rằng cache đã hết hạn
+        loader.innerHTML = `<p>Dữ liệu đã cũ, đang làm mới...</p>`;
+        // --- END UX IMPROVEMENT ---
+        localStorage.removeItem(CACHE_KEY); // Xóa cache cũ
+      }
+    } catch (e) {
+      console.error("Lỗi parse dữ liệu cache, sẽ tải lại dữ liệu mới.", e);
+      localStorage.removeItem(CACHE_KEY); // Xóa cache hỏng
+    }
+  }
+  // --- END CACHING LOGIC ---
+
+  // Nếu không có cache hoặc cache bị lỗi, tải dữ liệu mới
+  await fetchAndSetupApplication();
+}
+
+/**
+ * Tải dữ liệu từ API, lưu vào cache và thiết lập ứng dụng.
+ */
+async function fetchAndSetupApplication() {
+  console.log("Đang tải dữ liệu mới từ API...");
+  try {
     const response = await fetch(API_URL);
     if (!response.ok) {
       throw new Error(`API call failed with status: ${response.status}`);
     }
     const data: AllData & { success?: boolean, message?: string } = await response.json();
 
-    // Kiểm tra xem API có trả về lỗi App Script không
     if (data.success === false) {
       throw new Error(`API Error: ${data.message}`);
     }
 
-    // 3. Lưu kết quả vào biến toàn cục DB
-    DB = data;
-    console.log("Database đã tải:", DB);
+    // --- START CACHING LOGIC ---
+    const dataToCache = {
+      timestamp: Date.now(),
+      data: data,
+    };
+    localStorage.setItem(CACHE_KEY, JSON.stringify(dataToCache));
+    console.log("Dữ liệu mới đã được lưu vào cache.");
+    // --- END CACHING LOGIC ---
 
-    // --- BẮT ĐẦU CẢI TIẾN ---
-    // Xác định các hãng có máy pha màu
-    // Logic: Một hãng có máy pha màu nếu nó có ít nhất 1 ParentProduct 
-    // có định nghĩa `color_mixing_product_type`.
+    setupApplication(data);
+  } catch (error: any) {
+    console.error("Lỗi nghiêm trọng khi tải dữ liệu:", error);
+    loader.innerHTML = `
+            <p style="color: red;"><strong>Đã xảy ra lỗi khi tải dữ liệu!</strong></p>
+            <p style="font-size: 12px; color: #333;">${error.message}</p>
+            <p style="font-size: 12px; color: #333;">Hãy thử làm mới hoặc liên hệ quản trị viên.</p>
+        `;
+  }
+}
+
+/**
+ * Thiết lập giao diện và logic ứng dụng từ dữ liệu đã có.
+ * @param data - Toàn bộ dữ liệu từ API hoặc cache.
+ */
+function setupApplication(data: AllData) {
+  DB = data;
+  console.log("Database đã sẵn sàng:", DB);
+
+  // Xác định các hãng có máy pha màu
     const mixingBrandIds = new Set<string | number>();
     if (DB.parentProducts) {
       DB.parentProducts.forEach(pp => {
@@ -128,29 +190,15 @@ async function initialize() {
       });
     }
     console.log("Các hãng có máy pha màu (IDs):", mixingBrandIds);
-    // --- KẾT THÚC CẢI TIẾN ---
 
-    // 4. Hiển thị bộ lọc Hãng (truyền Set ID vào)
-    renderTrademarks(mixingBrandIds); // <--- ĐÃ CẬP NHẬT
+  renderTrademarks(mixingBrandIds);
 
-    // 5. Hiển thị toàn bộ danh sách màu
-    // Lưu danh sách màu gốc để tìm kiếm
-    fullColorList = DB.colors || [];
-    renderColors(fullColorList);
+  fullColorList = DB.colors || [];
+  renderColors(fullColorList);
 
-    // 6. Ẩn thông báo tải và hiển thị ứng dụng
-    loader.classList.add('hidden');
-    appContainer.classList.remove('hidden');
-    console.log("Khởi tạo hoàn tất.");
-
-  } catch (error: any) {
-    console.error("Lỗi nghiêm trọng khi khởi tạo:", error);
-    loader.innerHTML = `
-            <p style="color: red;"><strong>Đã xảy ra lỗi khi tải dữ liệu!</strong></p>
-            <p style="font-size: 12px; color: #333;">${error.message}</p>
-            <p style="font-size: 12px; color: #333;">Hãy kiểm tra lại URL API trong file sidebar.js hoặc liên hệ quản trị viên.</p>
-        `;
-  }
+  loader.classList.add('hidden');
+  appContainer.classList.remove('hidden');
+  console.log("Ứng dụng đã được thiết lập thành công.");
 }
 
 /**
@@ -528,6 +576,17 @@ function navigateToPanel(panelName: AppState['panel'], title: string) {
     // Ẩn bộ lọc khi xem chi tiết
     headerElement.classList.add('hidden');
   }
+}
+
+/**
+ * Xử lý sự kiện khi người dùng nhấn nút "Làm mới".
+ * Xóa cache và tải lại toàn bộ ứng dụng.
+ */
+async function handleRefreshClick() {
+  console.log("Yêu cầu làm mới dữ liệu...");
+  localStorage.removeItem(CACHE_KEY);
+  console.log("Cache đã được xóa.");
+  await fetchAndSetupApplication();
 }
 
 /**

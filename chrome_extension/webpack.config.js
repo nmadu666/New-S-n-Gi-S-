@@ -1,6 +1,8 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
+const MiniCssExtractPlugin = require('mini-css-extract-plugin');
+const CssMinimizerPlugin = require('css-minimizer-webpack-plugin');
 
 module.exports = (env, argv) => {
   const isProduction = argv.mode === 'production';
@@ -16,6 +18,13 @@ module.exports = (env, argv) => {
       filename: '[name].js',
       clean: true, // Xóa thư mục dist trước mỗi lần build
     },
+    optimization: {
+      minimize: isProduction,
+      minimizer: [
+        `...`, // Giữ lại trình nén JavaScript mặc định của Webpack
+        new CssMinimizerPlugin(),
+      ],
+    },
     resolve: {
       extensions: ['.ts', '.js'],
       alias: {
@@ -30,12 +39,15 @@ module.exports = (env, argv) => {
           exclude: /node_modules/,
         },
         {
-          test: /\.css$/i,
-          use: ['style-loader', 'css-loader'],
+          test: /\.(sa|sc|c)ss$/i, // Hỗ trợ cả .sass, .scss và .css
+          use: [isProduction ? MiniCssExtractPlugin.loader : 'style-loader', 'css-loader', 'sass-loader'],
         },
       ],
     },
     plugins: [
+      new MiniCssExtractPlugin({
+        filename: '[name].css',
+      }),
       new HtmlWebpackPlugin({
         template: './sidebar.html',
         filename: 'sidebar.html',

@@ -22,6 +22,20 @@ import {
  */
 function doGet(e: GoogleAppsScript.Events.DoGet): GoogleAppsScript.Content.TextOutput {
   try {
+    // --- START CACHING LOGIC ---
+    const cache = CacheService.getScriptCache();
+    const CACHE_KEY = 'ALL_DATA_V1'; // Thay đổi version này (V2, V3...) để xóa cache cũ khi có thay đổi lớn
+    const cachedData = cache.get(CACHE_KEY);
+
+    if (cachedData) {
+      Logger.log("Serving data from cache.");
+      return ContentService.createTextOutput(cachedData).setMimeType(
+        ContentService.MimeType.JSON
+      );
+    }
+    Logger.log("Cache miss. Fetching fresh data from Sheets.");
+    // --- END CACHING LOGIC ---
+
     // 1. Đọc dữ liệu từ 5 sheet quan trọng
     // QUAN TRỌNG: Đảm bảo tên sheet (ví dụ "Colors", "Products")
     // khớp 100% với tên các tab trong Google Sheet của bạn.
@@ -40,9 +54,17 @@ function doGet(e: GoogleAppsScript.Events.DoGet): GoogleAppsScript.Content.TextO
       products,
     };
 
+    const dataToCache = JSON.stringify(allData);
+
+    // --- START CACHING LOGIC ---
+    // Lưu vào cache trong 1 giờ (3600 giây). Bạn có thể điều chỉnh thời gian này.
+    cache.put(CACHE_KEY, dataToCache, 3600); 
+    Logger.log("Data has been stored in cache.");
+    // --- END CACHING LOGIC ---
+
     // 3. Trả về cho Chrome Extension
     return ContentService
-      .createTextOutput(JSON.stringify(allData))
+      .createTextOutput(dataToCache)
       .setMimeType(ContentService.MimeType.JSON);
 
   } catch (error: any) {
