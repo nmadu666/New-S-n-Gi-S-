@@ -772,7 +772,7 @@ function calculatePrice(sku: Product, pricingInfo: ColorPricing) {
   const unitValue = parseFloat(String(sku.unit_value)) || 0;
 
   // 1. Tính giá màu thô
-  const rawGiaMau = (parseFloat(String(pricingInfo.pricePerMl)) || 0) * unitValue;
+  const rawGiaMau = (parseFloat(String(pricingInfo.pricePerMl)) || 0) * unitValue * 1000;
 
   // 2. Áp dụng hệ số nhân theo quy định của cửa hàng
   let calculatedGiaMau: number;
