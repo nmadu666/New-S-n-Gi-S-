@@ -10,7 +10,7 @@ import { AllData, Color, ColorPricing, ParentProduct, Product, Trademark } from 
 import './sidebar.scss';
 
 // !!! QUAN TRỌNG: DÁN URL APP SCRIPT CỦA BẠN VÀO ĐÂY !!!
-const API_URL = "https://script.google.com/macros/s/AKfycbxub034UvLNAad2lkELjIkRqsN7yJqFCLBnG8pbqNascU6MiC1vODHpQG_UwPhKnMY/exec"; // Thay thế bằng URL của bạn
+const API_URL = "https://script.google.com/macros/s/AKfycbyqRroIbU-nYZHqR-0o1oZpCCuNDivVUE06DtBTAPy367IkXzDDVWRcN_MDAXJiRe4Z/exec"; // Thay thế bằng URL của bạn
 
 // --- START CACHING CONFIG ---
 const CACHE_KEY = 'paint_app_data_v1'; // Thay đổi version để xóa cache cũ khi có thay đổi lớn
@@ -428,12 +428,22 @@ function renderColors(colorsToRender: Color[]) {
     const copyButton = document.createElement('button');
     copyButton.className = 'copy-button';
     copyButton.textContent = 'Copy';
-    copyButton.title = `Sao chép mã màu ${color.code}`;
+    copyButton.title = `Sao chép thông tin màu (mã, tên, NCS)`;
 
     // Gắn sự kiện sao chép
     copyButton.addEventListener('click', (e) => {
       e.stopPropagation(); // Ngăn không cho sự kiện click của thẻ màu được kích hoạt
-      navigator.clipboard.writeText(color.code).then(() => {
+
+      // --- START: Cải tiến nội dung sao chép ---
+      const ncsCode = (color as any).ncsCode;
+      const textToCopy = [
+        color.code || '',
+        color.name || '',
+        ncsCode ? `NCS: ${ncsCode}` : ''
+      ].filter(Boolean).join(' ').trim();
+      // --- END: Cải tiến nội dung sao chép ---
+
+      navigator.clipboard.writeText(textToCopy).then(() => {
         copyButton.textContent = 'Đã chép!';
         copyButton.classList.add('copied');
         setTimeout(() => {
@@ -834,6 +844,17 @@ function renderSKUs(skus: Product[], pricingInfo: ColorPricing) {
       });
     });
 
+    // --- START: Cải tiến hiển thị tên màu ---
+    const selectedColor = currentState.selectedColor;
+    let colorLabel = 'Giá Màu (Thêm):'; // Mặc định
+    if (selectedColor) {
+      const ncsCode = (selectedColor as any).ncsCode || '';
+      const colorInfo = [selectedColor.code, selectedColor.name, ncsCode]
+        .filter(Boolean).join(' ').trim();
+      colorLabel = `Giá Màu (${colorInfo}):`;
+    }
+    // --- END: Cải tiến hiển thị tên màu ---
+
     const item = createElement('div', { className: 'sku-item' },
       createElement('div', { className: 'sku-name' }, createElement('span', { textContent: sku.fullName }), copySkuButton),
       createElement('div', { className: 'price-row' },
@@ -841,7 +862,7 @@ function renderSKUs(skus: Product[], pricingInfo: ColorPricing) {
         createElement('span', { textContent: `${giaBase.toLocaleString('vi-VN')} đ` })
       ),
       createElement('div', { className: 'price-row' },
-        createElement('span', { textContent: 'Giá Màu (Thêm):' }),
+        createElement('span', { textContent: colorLabel }),
         createElement('span', { textContent: `${giaMau.toLocaleString('vi-VN')} đ` })
       ),
       createElement('div', { className: 'price-row total' },
@@ -886,6 +907,9 @@ function createElement<K extends keyof HTMLElementTagNameMap>(
  * @param title - Tiêu đề mới
  */
 function navigateToPanel(panelName: AppState['panel'], title: string) {
+  // --- START UX IMPROVEMENT: SCROLL TO TOP ---
+  window.scrollTo(0, 0);
+  // --- END UX IMPROVEMENT: SCROLL TO TOP ---
   const panelOrder = ['colors', 'parentProducts', 'skus'];
   const panelIndex = panelOrder.indexOf(panelName);
   const oldPanelIndex = panelOrder.indexOf(currentState.panel);
