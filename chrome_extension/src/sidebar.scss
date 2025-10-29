@@ -145,6 +145,47 @@ body {
   transition: all 0.3s ease;
 }
 
+/* --- START: CSS cho ô tìm kiếm trong panel --- */
+.search-container {
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+}
+
+/* --- START: Wrapper cho ô tìm kiếm có nút xóa --- */
+.search-input-wrapper {
+  position: relative;
+}
+
+input[type="search"] {
+  width: 100%;
+  padding: 8px 32px 8px 12px; /* Thêm padding bên phải cho nút xóa */
+  font-size: 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+.search-clear-button {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 32px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 20px;
+  color: #888;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.search-clear-button:hover {
+  color: var(--dark-gray);
+}
+/* --- END: CSS cho ô tìm kiếm trong panel --- */
+
 /* Danh sách (grid) màu */
 #color-list {
   display: grid;
@@ -257,6 +298,10 @@ body {
 
 /* Danh sách sản phẩm/SKU (dạng list) */
 .list-item {
+  /* --- START: Cải tiến layout với hình ảnh --- */
+  display: flex;
+  align-items: center;
+  gap: 12px;
   padding: 12px 8px;
   border-bottom: 1px solid var(--light-gray);
   cursor: pointer;
@@ -265,11 +310,39 @@ body {
   opacity: 0;
   animation: fadeInSlideUp 0.4s ease-out forwards;
   /* --- END ITEM ANIMATION --- */
+  /* --- END: Cải tiến layout với hình ảnh --- */
 }
 
 .list-item:hover {
   background-color: #f9f9f9;
 }
+
+/* --- START: CSS cho hình ảnh sản phẩm --- */
+.list-item-image {
+  width: 50px;
+  height: 50px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0; /* Ngăn hình ảnh bị co lại */
+
+  /* --- START: CSS cho Lazy Loading --- */
+  opacity: 0;
+  transition: opacity 0.3s ease-in-out;
+
+  &.loaded {
+    opacity: 1;
+  }
+  /* --- END: CSS cho Lazy Loading --- */
+}
+
+.list-item-image-placeholder {
+  width: 50px;
+  height: 50px;
+  background-color: var(--light-gray);
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+/* --- END: CSS cho hình ảnh sản phẩm --- */
 
 .list-item strong {
   display: block;
@@ -282,6 +355,63 @@ body {
   font-size: 12px;
   color: #555;
 }
+
+/* --- START: CSS cho thông báo danh sách rỗng --- */
+.empty-list-message {
+  padding: 24px 16px;
+  text-align: center;
+  color: #666;
+}
+/* --- END: CSS cho thông báo danh sách rỗng --- */
+
+/* --- START: CSS cho tiêu đề category trong danh sách --- */
+.list-category-header {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #888;
+  background-color: #f9f9f9;
+  padding: 6px 12px;
+  margin-top: 12px;
+  /* --- START: Cập nhật cho tính năng thu gọn/mở rộng --- */
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  user-select: none; /* Ngăn bôi đen chữ khi click nhanh */
+  transition: background-color 0.2s ease;
+
+  &:hover {
+    background-color: #f0f0f0;
+  }
+  /* --- END: Cập nhật cho tính năng thu gọn/mở rộng --- */
+}
+/* --- END: CSS cho tiêu đề category trong danh sách --- */
+
+/* --- START: CSS cho nhóm category có thể thu gọn --- */
+.category-product-list {
+  max-height: 2000px; /* Một giá trị đủ lớn để chứa tất cả sản phẩm */
+  overflow: hidden;
+  transition: max-height 0.4s ease-in-out;
+}
+
+.category-group.collapsed .category-product-list {
+  max-height: 0;
+}
+
+.category-toggle-icon {
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid #888;
+  border-bottom: 2px solid #888;
+  transform: rotate(45deg);
+  transition: transform 0.3s ease;
+}
+
+.category-group.collapsed .category-toggle-icon {
+  transform: rotate(-45deg);
+}
+/* --- END: CSS cho nhóm category có thể thu gọn --- */
 
 /* Chi tiết giá (SKU) */
 .sku-item {

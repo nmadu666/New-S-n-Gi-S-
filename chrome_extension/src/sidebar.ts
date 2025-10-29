@@ -23,6 +23,7 @@ interface AppState {
   panel: 'colors' | 'parentProducts' | 'skus';
   selectedColor: Color | null;
   selectedParentProduct: ParentProduct | null;
+  applicableParentProducts: ParentProduct[]; // Thêm để lưu danh sách SP gốc
 }
 
 // Biến toàn cục để lưu trữ toàn bộ cơ sở dữ liệu
@@ -34,7 +35,8 @@ let fullColorList: Color[] = [];
 let currentState: AppState = {
   panel: 'colors', // 'colors', 'parentProducts', 'skus'
   selectedColor: null,
-  selectedParentProduct: null
+  selectedParentProduct: null,
+  applicableParentProducts: [] // Khởi tạo
 };
 
 // Định nghĩa các ID DOM dưới dạng hằng số để dễ quản lý và tránh lỗi chính tả
@@ -52,6 +54,8 @@ const DOM_IDS = {
   HEADER: 'header',
   COLOR_LIST_PANEL: 'color-list-panel',
   PARENT_PRODUCT_LIST_PANEL: 'parent-product-list-panel',
+  PARENT_PRODUCT_SEARCH: 'parent-product-search', // Thêm ID ô tìm kiếm SP
+  PARENT_PRODUCT_SEARCH_CLEAR: 'parent-product-search-clear', // Thêm ID nút xóa
   SKU_LIST_PANEL: 'sku-list-panel',
   COLOR_LIST_CONTAINER: 'color-list',
   PARENT_PRODUCT_LIST_CONTAINER: 'parent-product-list',
@@ -71,6 +75,13 @@ const refreshButton = document.getElementById(DOM_IDS.REFRESH_BUTTON) as HTMLBut
 const panelTitle = document.getElementById(DOM_IDS.PANEL_TITLE) as HTMLElement;
 const headerElement = document.getElementById(DOM_IDS.HEADER) as HTMLElement;
 const contentElement = document.getElementById('content') as HTMLElement;
+const parentProductSearch = document.getElementById(DOM_IDS.PARENT_PRODUCT_SEARCH) as HTMLInputElement;
+const parentProductSearchClear = document.getElementById(DOM_IDS.PARENT_PRODUCT_SEARCH_CLEAR) as HTMLButtonElement;
+
+// --- START: Debounce cho các hàm tìm kiếm ---
+const debouncedApplyFilters = debounce(applyFilters, 300); // 300ms delay
+const debouncedApplyParentProductFilters = debounce(applyParentProductFilters, 300);
+// --- END: Debounce cho các hàm tìm kiếm ---
 
 // Các panel (sử dụng hằng số)
 const panels = {
@@ -100,6 +111,8 @@ colorSearch.addEventListener('input', handleColorSearch);
 clearFiltersButton.addEventListener('click', handleClearFiltersClick);
 backButton.addEventListener('click', handleBackClick);
 refreshButton.addEventListener('click', handleRefreshClick);
+parentProductSearch.addEventListener('input', handleParentProductSearch);
+parentProductSearchClear.addEventListener('click', handleClearParentProductSearch);
 
 /**
  * ===================================================================
@@ -508,7 +521,28 @@ function handleSortFilter() {
  */
 function handleColorSearch() {
   saveFilterState();
-  applyFilters();
+  debouncedApplyFilters(); // Sử dụng hàm đã được debounce
+}
+
+/**
+ * Xử lý sự kiện khi người dùng nhập vào ô tìm kiếm dòng sản phẩm.
+ */
+function handleParentProductSearch() {
+  // Hiển thị/ẩn nút xóa dựa trên nội dung input
+  if (parentProductSearch.value) {
+    parentProductSearchClear.classList.remove('hidden');
+  } else {
+    parentProductSearchClear.classList.add('hidden');
+  }
+  // Lọc và render lại danh sách ParentProduct
+  debouncedApplyParentProductFilters(); // Sử dụng hàm đã được debounce
+}
+
+/** Xử lý khi nhấn nút xóa trên ô tìm kiếm dòng sản phẩm */
+function handleClearParentProductSearch() {
+  parentProductSearch.value = ''; // Xóa nội dung
+  handleParentProductSearch(); // Gọi lại hàm search để cập nhật UI
+  parentProductSearch.focus(); // Trả focus về ô input
 }
 
 /**
@@ -603,11 +637,14 @@ function applyFilters() {
     filteredColors = filteredColors.filter(color => getToneFromHex(color.hexCode) === selectedTone);
   }
 
-  // 3. Lọc theo Từ khóa tìm kiếm (tìm cả tên và mã màu)
+  // 3. Lọc theo Từ khóa tìm kiếm (tìm cả tên, mã màu và mã NCS)
   if (searchTerm) {
-    filteredColors = filteredColors.filter(color =>
-      (color.name && color.name.toLowerCase().includes(searchTerm)) ||
-      (color.code && color.code.toLowerCase().includes(searchTerm))
+    filteredColors = filteredColors.filter(color => {
+        const ncsCode = (color as any).ncsCode;
+        return (color.name && color.name.toLowerCase().includes(searchTerm)) ||
+            (color.code && color.code.toLowerCase().includes(searchTerm)) ||
+            (ncsCode && String(ncsCode).toLowerCase().includes(searchTerm));
+      }
     );
   }
 
@@ -615,6 +652,24 @@ function applyFilters() {
   sortAndRenderColors(filteredColors);
 }
 
+/**
+ * Lọc và hiển thị danh sách dòng sản phẩm (ParentProduct)
+ */
+function applyParentProductFilters() {
+  const searchTerm = parentProductSearch.value.toLowerCase().trim();
+
+  if (!searchTerm) {
+    // Nếu ô tìm kiếm trống, hiển thị lại toàn bộ danh sách
+    renderParentProducts(currentState.applicableParentProducts);
+    return;
+  }
+
+  const filteredProducts = currentState.applicableParentProducts.filter(pp =>
+    pp.name.toLowerCase().includes(searchTerm)
+  );
+
+  renderParentProducts(filteredProducts);
+}
 /**
  * Sắp xếp và render danh sách màu dựa trên tùy chọn của người dùng.
  * @param colors - Mảng màu cần được sắp xếp và render.
@@ -667,16 +722,25 @@ function onColorClick(color: Color) {
   // -> (ví dụ: ['int_1', 'int_2', 'ext_1', 'sd'])
 
   // 3. Dùng danh sách `type` này, lọc `DB.parentProducts`
-  const applicableParentProducts = DB.parentProducts.filter(pp =>
+  let applicableProducts = DB.parentProducts.filter(pp =>
     allowedTypes.includes(pp.color_mixing_product_type)
   );
 
-  console.log("Các dòng sản phẩm phù hợp:", applicableParentProducts);
+  // 4. Thêm bước lọc: Chỉ lấy những ParentProduct có trademark_ref trùng với màu đã chọn
+  // (Đảm bảo sản phẩm không chỉ pha được mà còn thuộc đúng hãng của màu)
+  currentState.applicableParentProducts = applicableProducts.filter(pp =>
+    pp.trademark_ref == color.trademark_ref
+  );
 
-  // 4. Hiển thị danh sách ParentProduct phù hợp
-  renderParentProducts(applicableParentProducts);
+  console.log("Các dòng sản phẩm phù hợp:", currentState.applicableParentProducts);
 
-  // 5. Chuyển UI sang panel Dòng sản phẩm
+  // --- START: Cập nhật cho tìm kiếm ---
+  // Xóa nội dung tìm kiếm cũ và hiển thị danh sách đầy đủ
+  parentProductSearch.value = '';
+  renderParentProducts(currentState.applicableParentProducts);
+  // --- END: Cập nhật cho tìm kiếm ---
+
+  // Chuyển UI sang panel Dòng sản phẩm
   navigateToPanel('parentProducts', `Màu: ${color.code} - ${color.name}`);
 }
 
@@ -688,25 +752,94 @@ function onColorClick(color: Color) {
  */
 function renderParentProducts(parentProducts: ParentProduct[]) {
   parentProductListContainer.innerHTML = ''; // Xóa nội dung cũ
+  // --- START: Cải tiến thông báo khi danh sách rỗng ---
   if (!parentProducts || parentProducts.length === 0) {
-    parentProductListContainer.innerHTML = '<p>Màu này không pha được cho dòng sản phẩm nào.</p>';
+    // Kiểm tra xem có phải do tìm kiếm không có kết quả hay không
+    const isSearching = parentProductSearch.value.trim() !== '';
+    const message = isSearching
+      ? 'Không tìm thấy sản phẩm nào.'
+      : 'Màu này không pha được cho dòng sản phẩm nào.';
+
+    parentProductListContainer.innerHTML = `<p class="empty-list-message">${message}</p>`;
+    // --- END: Cải tiến thông báo khi danh sách rỗng ---
     return;
   }
 
-  parentProducts.forEach((pp, index) => {
-    const item = document.createElement('div');
-    item.className = 'list-item';
-    // Thêm độ trễ animation so le
-    item.style.animationDelay = `${index * 30}ms`;
-    item.dataset.parentProductId = String(pp.id);
-    item.innerHTML = `
+  // --- START: Gộp sản phẩm theo category ---
+  const groupedByCategory: { [key: string]: ParentProduct[] } = {};
+
+  parentProducts.forEach(pp => {
+    const category = pp.category || 'Chưa phân loại';
+    if (!groupedByCategory[category]) {
+      groupedByCategory[category] = [];
+    }
+    groupedByCategory[category].push(pp);
+  });
+
+  // Sắp xếp các category theo alphabet
+  const sortedCategories = Object.keys(groupedByCategory).sort((a, b) => a.localeCompare(b));
+
+  let globalIndex = 0;
+  sortedCategories.forEach(category => {
+    // --- START: Cập nhật cho tính năng thu gọn/mở rộng ---
+    // Tạo một wrapper cho toàn bộ group (header + list)
+    const categoryGroup = document.createElement('div');
+    categoryGroup.className = 'category-group';
+
+    // Tạo tiêu đề cho category
+    const header = document.createElement('div');
+    header.className = 'list-category-header';
+    // Thêm icon để chỉ thị trạng thái đóng/mở
+    header.innerHTML = `<span>${category}</span><span class="category-toggle-icon"></span>`;
+    categoryGroup.appendChild(header);
+
+    // Tạo container cho danh sách sản phẩm trong category
+    const productList = document.createElement('div');
+    productList.className = 'category-product-list';
+
+    // Render các sản phẩm trong category
+    const productsInCategory = groupedByCategory[category];
+    // Sắp xếp sản phẩm trong category theo tên A-Z
+    productsInCategory.sort((a, b) => a.name.localeCompare(b.name));
+
+    productsInCategory.forEach(pp => {
+      const item = document.createElement('div');
+      item.className = 'list-item';
+      item.style.animationDelay = `${globalIndex * 30}ms`;
+      item.dataset.parentProductId = String(pp.id);
+
+      // --- START: Sửa lỗi Lazy Loading ---
+      const placeholderSrc = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+      const imageHtml = pp.image_url
+        ? `<img src="${placeholderSrc}" data-src="${pp.image_url}" alt="${pp.name}" class="list-item-image lazy">`
+        : '<div class="list-item-image-placeholder"></div>';
+
+      item.innerHTML = `
+        ${imageHtml}
+        <div class="list-item-info">
             <strong>${pp.name || 'N/A'}</strong>
             <span>(Loại: ${pp.color_mixing_product_type || 'N/A'})</span>
-        `;
-    // Gắn sự kiện click
-    item.addEventListener('click', () => onParentProductClick(pp));
-    parentProductListContainer.appendChild(item);
+        </div>`;
+      // --- END: Sửa lỗi Lazy Loading ---
+      item.addEventListener('click', () => onParentProductClick(pp));
+      productList.appendChild(item); // Thêm item vào container của category
+      globalIndex++;
+    });
+
+    categoryGroup.appendChild(productList);
+    parentProductListContainer.appendChild(categoryGroup);
+
+    // Gắn sự kiện click cho header để toggle class 'collapsed'
+    header.addEventListener('click', () => {
+      categoryGroup.classList.toggle('collapsed');
+    });
+    // --- END: Cập nhật cho tính năng thu gọn/mở rộng ---
   });
+  // --- END: Gộp sản phẩm theo category ---
+
+  // --- START: Kích hoạt lại Lazy Loading ---
+  setupLazyLoading();
+  // --- END: Kích hoạt lại Lazy Loading ---
 }
 
 /**
@@ -975,4 +1108,65 @@ function handleBackClick() {
     // Từ Dòng SP quay về Danh sách màu
     navigateToPanel('colors', 'Tất Cả Màu');
   }
+}
+
+/**
+ * Tạo một phiên bản "debounced" của một hàm.
+ * Hàm debounced sẽ chỉ được gọi sau khi đã qua một khoảng thời gian `waitFor` mà không được gọi lại.
+ * @param func Hàm cần debounce.
+ * @param waitFor Thời gian chờ (miligiây).
+ */
+function debounce<F extends (...args: any[]) => any>(func: F, waitFor: number) {
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+
+    const debounced = (...args: Parameters<F>): void => {
+        if (timeout !== null) {
+            clearTimeout(timeout);
+            timeout = null;
+        }
+        timeout = setTimeout(() => func(...args), waitFor);
+    };
+
+    return debounced;
+}
+
+/**
+ * ===================================================================
+ * HÀM TIỆN ÍCH (Lazy Loading)
+ * ===================================================================
+ */
+
+/**
+ * Thiết lập IntersectionObserver để lazy load hình ảnh.
+ */
+function setupLazyLoading() {
+    const lazyImages = parentProductListContainer.querySelectorAll('img.lazy');
+
+    if ('IntersectionObserver' in window) {
+        const observer = new IntersectionObserver((entries, observer) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const lazyImage = entry.target as HTMLImageElement;
+                    lazyImage.src = lazyImage.dataset.src!;
+                    lazyImage.classList.remove('lazy');
+                    lazyImage.addEventListener('load', () => {
+                        lazyImage.classList.add('loaded');
+                    });
+                    lazyImage.addEventListener('error', () => {
+                        const placeholder = document.createElement('div');
+                        placeholder.className = 'list-item-image-placeholder';
+                        lazyImage.parentNode?.replaceChild(placeholder, lazyImage);
+                    });
+                    observer.unobserve(lazyImage);
+                }
+            });
+        });
+
+        lazyImages.forEach(lazyImage => {
+            observer.observe(lazyImage);
+        });
+    } else {
+        // Fallback cho trình duyệt cũ
+        lazyImages.forEach(img => (img as HTMLImageElement).src = (img as HTMLImageElement).dataset.src!);
+    }
 }

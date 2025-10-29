@@ -22,8 +22,10 @@ export interface Color {
 export interface ParentProduct {
   id: string;
   name: string;
+  category: string;
   color_mixing_product_type: string;
   trademark_ref: string | number; // Thêm thuộc tính này dựa trên logic ở client
+  image_url?: string;
 }
 
 export interface ColorPricing {
