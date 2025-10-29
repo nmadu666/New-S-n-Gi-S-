@@ -14,6 +14,7 @@ export interface Trademark {
 export interface Color {
   id: string | number;
   code: string;
+  ncsCode: string; // Đổi tên từ ncs thành ncsCode
   name: string;
   hexCode: string;
   trademark_ref: string | number;
